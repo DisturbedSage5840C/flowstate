@@ -1,26 +1,29 @@
 {
-  "model": "CNN-BiLSTM-Attention",
+  "model": "CNN-BiLSTM-Attention (synthetic demo table, out-of-fold)",
   "overall": {
-    "chl_a_r2": -1.706352949142456,
-    "chl_a_rmse": 33.61561061982587,
-    "turbidity_r2": -8.093779563903809,
-    "turbidity_rmse": 23.754255375353274,
-    "do_r2": -0.20679879188537598,
-    "do_rmse": 1.7751925350590962
+    "chl_a_r2": 0.5771173676018608,
+    "chl_a_rmse": 29.840501556178186,
+    "turbidity_r2": 0.8704210588431496,
+    "turbidity_rmse": 53.08915160158774,
+    "do_r2": -0.3543314763572749,
+    "do_rmse": 2.307860026678098
   },
   "per_type": {
+    "lagoon": {
+      "chl_a_r2": 0.7667105027763359,
+      "turbidity_r2": 0.17479428292485355,
+      "do_r2": -0.79357524225438
+    },
     "lake": {
-      "chl_a_r2": -1.706352949142456,
-      "turbidity_r2": -8.093779563903809,
-      "do_r2": -0.20679879188537598
+      "chl_a_r2": 0.04367017922900818,
+      "turbidity_r2": -0.3575380925931777,
+      "do_r2": -1.2580002741907887
     },
     "river": {
-      "chl_a_r2": null,
-      "turbidity_r2": null,
-      "do_r2": null
+      "chl_a_r2": -0.2600675516956792,
+      "turbidity_r2": 0.769966469236312,
+      "do_r2": 0.0718371705707922
     }
   },
-  "n_train": 240,
-  "n_val": 120,
-  "n_test": 30
+  "n_rows": 390
 }

@@ -1,0 +1,69 @@
+{
+  "rows": 2517,
+  "turbidity_dogliotti_vs_measured": {
+    "n": 851,
+    "spearman_rho": 0.212,
+    "pearson_r": 0.087,
+    "median_ratio_est_over_measured": 13.956,
+    "rmse": 862.374,
+    "r2_identity": -214.472,
+    "pearson_r_log": 0.211,
+    "within_factor_2": 0.165
+  },
+  "do_surrogate_vs_measured": {
+    "n": 2421,
+    "spearman_rho": 0.121,
+    "pearson_r": 0.133,
+    "median_ratio_est_over_measured": 1.035,
+    "rmse": 2.821,
+    "r2_identity": -0.959
+  },
+  "ndci_vs_measured_spearman": {
+    "do": -0.259,
+    "bod": 0.398,
+    "turbidity": 0.045
+  },
+  "chl_a_empirical": "NOT VALIDATED - no in-situ chlorophyll-a exists in CPCB NWDP",
+  "turbidity_by_type": {
+    "lake": {
+      "n": 168,
+      "spearman_rho": 0.313,
+      "pearson_r": 0.163,
+      "median_ratio_est_over_measured": 5.474,
+      "rmse": 513.623,
+      "r2_identity": -211.018,
+      "pearson_r_log": 0.246,
+      "within_factor_2": 0.244
+    },
+    "reservoir": {
+      "n": 76,
+      "spearman_rho": 0.204,
+      "pearson_r": -0.084,
+      "median_ratio_est_over_measured": 4.962,
+      "rmse": 402.816,
+      "r2_identity": -53.875,
+      "pearson_r_log": 0.138,
+      "within_factor_2": 0.224
+    },
+    "river": {
+      "n": 392,
+      "spearman_rho": 0.322,
+      "pearson_r": 0.183,
+      "median_ratio_est_over_measured": 17.632,
+      "rmse": 980.681,
+      "r2_identity": -320.035,
+      "pearson_r_log": 0.319,
+      "within_factor_2": 0.146
+    },
+    "unknown": {
+      "n": 215,
+      "spearman_rho": 0.005,
+      "pearson_r": -0.034,
+      "median_ratio_est_over_measured": 25.121,
+      "rmse": 962.621,
+      "r2_identity": -149.621,
+      "pearson_r_log": 0.031,
+      "within_factor_2": 0.116
+    }
+  }
+}
