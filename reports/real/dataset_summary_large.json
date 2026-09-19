@@ -1,0 +1,53 @@
+{
+  "source": "CPCB NWDP manual monitoring (real, in-situ) + Sentinel-2 L2A via Planetary Computer",
+  "is_proxy": false,
+  "rows": 8461,
+  "stations": 2121,
+  "states": 35,
+  "date_range": [
+    "2019-01-01",
+    "2021-12-30"
+  ],
+  "extraction_status_counts": {
+    "ok": 9038,
+    "no_scene": 4265,
+    "cloudy": 3149,
+    "no_water": 2464
+  },
+  "labels_available": {
+    "do": 8152,
+    "bod": 6834,
+    "turbidity": 3223
+  },
+  "temperature_available": 984,
+  "by_water_body_type": {
+    "river": 4288,
+    "unknown": 2158,
+    "lake": 1426,
+    "reservoir": 589
+  },
+  "day_diff_days": {
+    "0.0": 1619,
+    "1.0": 3236,
+    "2.0": 2595,
+    "3.0": 1011
+  },
+  "min_water_px": 20,
+  "cpcb_class_counts": {
+    "A": 2818,
+    "B": 2204,
+    "D": 1466,
+    "C": 988,
+    "Below E": 571,
+    "E": 370,
+    "NaN": 44
+  },
+  "wqi_tier_counts": {
+    "Moderate": 2511,
+    "Poor": 2397,
+    "Good": 1618,
+    "Very Poor": 1558,
+    "Excellent": 356,
+    "NaN": 21
+  }
+}

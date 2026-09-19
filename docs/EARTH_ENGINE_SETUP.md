@@ -1,9 +1,8 @@
 # Enabling Google Earth Engine for this project (project ID: `prayashack`)
 
-**Current state (verified 2026-09-19):** the saved Earth Engine login works and reaches Google, but the
-Earth Engine API is switched off for the Cloud project `prayashack`, so every call fails with
-"Google Earth Engine API has not been used in project prayashack before or it is disabled".
-The results in this repo therefore use Sentinel-2 from Microsoft Planetary Computer, which needs no login.
+**Current state (verified 2026-09-19): enabled and working** for project `prayashack`. The steps below are kept for anyone
+setting up a new project or machine. Both backends are available: Planetary Computer (no login) and Earth Engine
+(`python -m scripts.extract_satellite --backend gee`, about 13x faster).
 
 ## 1. Enable the API
 1. Sign in to Google with the account that **owns** the `prayashack` project (check the avatar, top right).
@@ -44,4 +43,4 @@ It must print `2`. A stronger check that real imagery is reachable:
 ## After it works
 - `python -m scripts.tune_mndwi --start 2024-01-01 --end 2024-06-30` picks per-site water thresholds (writes `config/mndwi_thresholds.yaml`).
 - `python -m scripts.run_acquisition ...` exports Sentinel-2 rasters for the configured sites (large sites are tiled automatically).
-- The Earth Engine code paths in `src/acquisition/gee.py` have unit tests but have never been run against Earth Engine.
+- Verified live: small-site raster export, `fetch_scenes`, MNDWI tuning and the station extraction. Multi-tile export of large sites is only unit-tested.

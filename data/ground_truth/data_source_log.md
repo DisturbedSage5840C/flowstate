@@ -50,9 +50,21 @@ Loaded: ~84,000 visits at ~4,000 stations in 36 states/UTs (2019-2024), of which
 - Per (station, sampling date): nearest clear scene within ±3 days; median reflectance of water pixels within 500 m
   (MNDWI > 0, NIR < 0.20, SCL not cloud/shadow/cirrus/snow). Rejections are recorded (`no_scene`, `cloudy`, `no_water`).
 - Code: `src/data/satellite_extract.py`, `scripts/extract_satellite.py`. This is the same product Earth Engine serves as
-  `COPERNICUS/S2_SR_HARMONIZED`. **Earth Engine itself was not used for the reported results** (project `prayashack`
-  authenticates, but the Earth Engine API was not enabled for it when this was run). ACOLITE / C2RCC were not run either;
-  results use Sen2Cor L2A.
+  `COPERNICUS/S2_SR_HARMONIZED`. The reported model results (2,517 rows) were produced with this backend.
+  ACOLITE / C2RCC were not run; results use Sen2Cor L2A.
+
+### Sentinel-2 L2A reflectance — Google Earth Engine (enabled 2026-09-19, project `prayashack`)
+- Same station-visit extraction computed server-side (`src/data/gee_extract.py`, `--backend gee`). About 13 visits/s, roughly 13x
+  faster than Planetary Computer.
+- **Cross-check against Planetary Computer** on 120 visits spread over states (`reports/real/backend_comparison.json`): 99 %
+  usable in both, the same scene picked in 97.5 %, band correlation 0.97-0.98, median relative difference 3-6 % (nearest-neighbour
+  vs bilinear resampling of the 20 m bands). The two backends agree; switching backend does not change the science.
+- A larger sample extracted with this backend (14,492 visits, 7,095 usable) gives `data/processed/train_real_large.parquet`
+  (8,461 matched rows, 2,121 stations, 35 states; DO 8,152, BOD 6,834, turbidity 3,223). **No model has been trained on it yet.**
+- Raster export (`scripts/run_acquisition.py`) and per-site MNDWI thresholds (`scripts/tune_mndwi.py`) were run live for the first
+  time. Two bugs found and fixed: the raster water mask lacked the NIR < 0.20 cap used by the station extraction, and Otsu
+  thresholds on land-dominated histograms were nonsense (e.g. -0.38 for Bellandur); thresholds are now accepted only for clearly
+  bimodal samples (3 of 13 sites), otherwise the default 0.0 is kept.
 
 ### Landsat 8/9 Collection 2 Level 2 thermal — Planetary Computer
 - `lwir11` (ST_B10) + `qa_pixel` water/clear bits; median °C of clear water pixels within 500 m, ±5 days.
