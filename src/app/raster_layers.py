@@ -14,19 +14,16 @@ import matplotlib.image  # noqa: E402
 from matplotlib import colors  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from src.app.map_utils import WQI_CLASSES  # noqa: E402 — single source of truth for WQI tiers
+from src.wqi.wqi_engine import WQI_TIERS as _ENGINE_TIERS  # noqa: E402 — single source of truth
 
 NODATA = -9999.0
-# WQI tiers mirror src/wqi/wqi_engine.py's pollution-index convention (0 = pure, higher = worse),
-# via the same WQI_CLASSES the dashboard map legend uses (src/app/map_utils.py).
-WQI_TIERS = [
-    (info["range"][1], info["label"], info["color"]) for info in WQI_CLASSES.values()
-]
+# (upper bound, label, colour) triples derived from the engine's tiers (0 = pristine, 100 = worst).
+WQI_TIERS = [(t.upper, t.label, t.color) for t in _ENGINE_TIERS]
 PARAM_CMAPS = {"chl_a": "YlGn", "turbidity": "YlOrBr", "do": "RdYlBu", "wqi": "RdYlGn_r"}
 
 
 def wqi_tier(value: float) -> tuple[str, str]:
-    for upper, label, color in WQI_TIERS:
+    for upper, label, color in WQI_TIERS[:-1]:
         if value < upper:
             return label, color
     return WQI_TIERS[-1][1:]

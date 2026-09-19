@@ -1,32 +1,23 @@
-"""src/models/__init__.py"""
-from .spatial_cv import SpatialKFold, spatial_cross_val_score
-from .metrics import MetricsReporter, spatial_cv_rmse
+"""src/models — heavy optional dependencies (xgboost/optuna, shap, torch) are imported lazily."""
 
-__all__ = [
-    "SpatialKFold",
-    "spatial_cross_val_score",
-    "MetricsReporter",
-    "spatial_cv_rmse",
-]
+from importlib import import_module
 
-# WaterQualityXGB (needs optuna), SHAPExplainer (needs shap), and the DL model
-# (needs torch) each pull in a heavy optional dependency. Importing them
-# eagerly meant `from src.models.dl_model import ...` failed with a missing
-# optuna/shap even when only the DL stack was needed. Import lazily instead.
-try:
-    from .xgboost_pipeline import WaterQualityXGB
-    __all__.append("WaterQualityXGB")
-except ImportError:
-    pass
+_LAZY = {
+    "SpatialKFold": ".spatial_cv",
+    "spatial_cross_val_score": ".spatial_cv",
+    "MetricsReporter": ".metrics",
+    "spatial_cv_rmse": ".metrics",
+    "WaterQualityXGB": ".xgboost_pipeline",
+    "SHAPExplainer": ".shap_explainer",
+    "AquaSenseDLModel": ".dl_model",
+    "AquaSenseTrainer": ".dl_model",
+    "DLPredictor": ".dl_model",
+}
 
-try:
-    from .shap_explainer import SHAPExplainer
-    __all__.append("SHAPExplainer")
-except ImportError:
-    pass
+__all__ = list(_LAZY)
 
-try:
-    from .dl_model import AquaSenseDLModel, AquaSenseTrainer
-    __all__ += ["AquaSenseDLModel", "AquaSenseTrainer"]
-except ImportError:
-    pass
+
+def __getattr__(name):
+    if name in _LAZY:
+        return getattr(import_module(_LAZY[name], __name__), name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

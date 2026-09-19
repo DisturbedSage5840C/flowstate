@@ -15,6 +15,8 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
+from src.data.sensors import day_tolerance
+
 
 # ---------------------------------------------------------------------------
 # Haversine distance
@@ -34,20 +36,9 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 # Tolerance lookup by sensor
 # ---------------------------------------------------------------------------
 
-SENSOR_DAY_TOLERANCE = {
-    "S2":       3,   # Sentinel-2 revisit ~5 days; ±3 is conservative
-    "L8":       5,   # Landsat-8/9 revisit ~16 days; ±5 for matching
-    "L9":       5,
-    "LANDSAT":  5,
-}
-
-
 def get_day_tolerance(sensor: str) -> int:
-    key = sensor.upper().replace("-", "").replace("_", "")
-    for k, v in SENSOR_DAY_TOLERANCE.items():
-        if k in key:
-            return v
-    return 3  # default to Sentinel-2 tolerance
+    """+/-3 days for Sentinel-2, +/-5 for Landsat (any common spelling); unknown sensors get the S2 default."""
+    return day_tolerance(sensor)
 
 
 # ---------------------------------------------------------------------------
@@ -102,8 +93,10 @@ def spatial_temporal_join(
         time_mask = day_diff <= tolerance
 
         # Spatial filter
-        dist_km = site_feats.apply(
-            lambda r: _haversine_km(gt_lat, gt_lon, r["lat"], r["lon"]), axis=1
+        dist_km = pd.Series(
+            _haversine_km(gt_lat, gt_lon, site_feats["lat"].to_numpy(dtype=float),
+                          site_feats["lon"].to_numpy(dtype=float)),
+            index=site_feats.index,
         )
         space_mask = dist_km <= radius_km
 

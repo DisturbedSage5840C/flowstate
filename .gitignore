@@ -1,20 +1,32 @@
+# big / regenerable data (rebuild with scripts/fetch_insitu.py and scripts/extract_satellite.py)
 data/raw/
 data/interim/
-data/processed/
-data/ground_truth/
+data/**/*.nc
+*.tif
+
+# python / tooling
+.venv/
 __pycache__/
 *.py[cod]
 *.pyo
-.env
-*.pt
-*.pkl
+.pytest_cache/
 *.egg-info/
 dist/
 build/
+
+# secrets and local artefacts (never commit credentials: Kaggle tokens, Earth Engine keys, .env)
+.env
+.kaggle/
+access_token
+kaggle.json
+*service-account*.json
+*.pt
+*.pkl
 .DS_Store
 Thumbs.db
+
+# reports are tracked (metrics, models, plots); config JSON stays tracked
 !config/*.json
 !reports/**/*.json
 !reports/**/*.png
 !reports/**/*.csv
-data/**/*.nc

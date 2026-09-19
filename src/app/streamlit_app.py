@@ -35,7 +35,7 @@ from src.app.map_utils import (
     WQI_CLASSES,
     _wqi_class,
 )
-from src.wqi.wqi_engine import compute_wqi_dataframe
+from src.wqi.wqi_engine import WQI_TIERS, compute_wqi_dataframe
 
 # ── Optional folium embed ─────────────────────────────────
 try:
@@ -53,6 +53,24 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# ─────────────────────────────────────────────────────────
+# Real-data mode: used whenever data/processed/train_real.parquet exists
+# ─────────────────────────────────────────────────────────
+from src.app.real_data import load_real  # noqa: E402
+
+_REAL = load_real(ROOT)
+if _REAL is not None:
+    from src.app import real_view  # noqa: E402
+
+    st.markdown(
+        "<h1 style='margin-bottom:0'>💧 Aqua-Sense</h1>"
+        "<p style='color:grey; margin-top:2px'>Water quality of Indian inland waters from CPCB measurements "
+        "and Sentinel-2</p>",
+        unsafe_allow_html=True,
+    )
+    real_view.render(_REAL)
+    st.stop()
 
 # ─────────────────────────────────────────────────────────
 # Load sites config
@@ -95,8 +113,8 @@ def get_data_date_range() -> tuple[date, date]:
 
 def _synthetic_predictions(sites_cfg: list, start: date, end: date) -> pd.DataFrame:
     """
-    Generate plausible synthetic predictions with real CPCB WQI calculations
-    via Marutey's wqi_engine.
+    Last-resort random demo values. The WQI is computed only from the parameters
+    that exist here (DO, turbidity, Chl-a); BOD and pH are never made up.
     """
     np.random.seed(42)
     rows = []
@@ -112,8 +130,6 @@ def _synthetic_predictions(sites_cfg: list, start: date, end: date) -> pd.DataFr
             chl_a     = float(np.random.uniform(5, 80))
             turbidity = float(np.random.uniform(10, 180))
             do        = float(np.random.uniform(2, 10))
-            bod       = float(turbidity * 0.15 + np.random.uniform(1, 6))
-            ph        = 7.5
 
             rows.append({
                 "site":            site["name"],
@@ -125,8 +141,6 @@ def _synthetic_predictions(sites_cfg: list, start: date, end: date) -> pd.DataFr
                 "chl_a":           round(chl_a, 2),
                 "turbidity":       round(turbidity, 2),
                 "do":              round(do, 2),
-                "bod":             round(bod, 2),
-                "ph":              ph,
             })
 
     df_raw = pd.DataFrame(rows)
@@ -151,16 +165,13 @@ def _synthetic_predictions(sites_cfg: list, start: date, end: date) -> pd.DataFr
 
 @st.cache_resource
 def load_dl_model():
+    """The DL artifact bundles weights + scalers; a missing artifact is reported, never faked."""
     try:
-        from src.models.dl_model import AquaSenseDLModel
-        model = AquaSenseDLModel()
-        model_path = ROOT / "reports" / "dl_model.pt"
-        if model_path.exists():
-            import torch
-            model.load_state_dict(torch.load(str(model_path), map_location="cpu"))
-            model.eval()
-            return model
-        return model
+        from src.models.dl_model import DLPredictor
+        return DLPredictor.load(ROOT / "reports" / "dl_artifact.pt")
+    except FileNotFoundError as e:
+        st.warning(str(e))
+        return None
     except Exception as e:
         st.warning(f"DL model unavailable: {e}")
         return None
@@ -184,8 +195,7 @@ def run_model_predict(df: pd.DataFrame, model_choice: str) -> pd.DataFrame:
     if model_choice == "DL (CNN-BiLSTM-Attention)":
         model = load_dl_model()
         if model is not None:
-            from src.models.dl_model import predict as dl_predict
-            return dl_predict(df, model=model)
+            return model.predict(df)
     else:
         model = load_xgboost_model()
         if model is not None:
@@ -257,7 +267,7 @@ with st.sidebar:
         "Display parameter",
         ["wqi", "chl_a", "turbidity", "do"],
         format_func=lambda x: {
-            "wqi":       "🌊 WQI (CPCB Index)",
+            "wqi":       "🌊 WQI (0–100, satellite-adapted)",
             "chl_a":     "🌿 Chlorophyll-a (µg/L)",
             "turbidity": "🟤 Turbidity (NTU/FNU)",
             "do":        "💨 Dissolved Oxygen (mg/L)",
@@ -356,11 +366,12 @@ if len(latest_preds) > 0:
     kpi1.metric("Sites Monitored", len(latest_preds))
     
     avg_wqi = float(latest_preds["wqi"].mean())
-    avg_cls = _wqi_class(avg_wqi)
+    avg_tier = _wqi_class(avg_wqi) or "n/a"
     kpi2.metric(
         "Avg WQI",
-        f"{avg_wqi:.1f} (Class {avg_cls})",
-        help="CPCB Scale: <25 A (Excellent), 25–50 B (Good), 50–75 C (Medium), 75–100 D (Bad), >100 E (Very Bad)"
+        f"{avg_wqi:.1f} ({avg_tier})" if np.isfinite(avg_wqi) else "n/a",
+        help="Satellite-adapted weighted-arithmetic index, 0 (pristine) to 100 (worst). "
+             "Tiers: " + ", ".join(f"{t.label} {t.lower:g}–{t.upper:g}" for t in WQI_TIERS)
     )
     kpi3.metric(
         "Avg Chl-a",
@@ -423,14 +434,13 @@ with tab_map:
                 st.info("No prediction data available for current selection.")
 
     with col_legend:
-        st.subheader("CPCB WQI Tiers")
-        for cls, info in WQI_CLASSES.items():
+        st.subheader("WQI tiers (0–100)")
+        for label, info in WQI_CLASSES.items():
             lo, hi = info["range"]
-            range_str = f"{lo}–{hi}" if hi < 9000 else f"> {lo}"
             st.markdown(
                 f"<div style='display:flex;align-items:center;gap:8px;margin:5px 0'>"
                 f"<div style='width:18px;height:18px;border-radius:50%;background:{info['color']}'></div>"
-                f"<span><b>Class {cls}</b> — {info['label']}<br><small>WQI: {range_str}</small></span>"
+                f"<span><b>{label}</b><br><small>WQI: {lo:g}–{hi:g}</small></span>"
                 f"</div>",
                 unsafe_allow_html=True,
             )
@@ -491,7 +501,7 @@ with tab_metrics:
                     "chl_a": "Chlorophyll-a (µg/L)",
                     "turbidity": "Turbidity (NTU)",
                     "do": "Dissolved Oxygen (mg/L)",
-                    "wqi": "CPCB WQI Score",
+                    "wqi": "WQI score (0–100)",
                 }[x],
             )
         
@@ -506,7 +516,7 @@ with tab_metrics:
                 color_discrete_sequence=["#1f77b4"],
             )
             # Add advisory threshold lines
-            thresholds = {"chl_a": 30.0, "turbidity": 50.0, "do": 5.0, "wqi": 75.0}
+            thresholds = {"chl_a": 30.0, "turbidity": 50.0, "do": 5.0, "wqi": 60.0}
             if ts_param in thresholds:
                 fig_ts.add_hline(
                     y=thresholds[ts_param],
@@ -520,7 +530,8 @@ with tab_metrics:
 
     # ── WQI Sub-index Breakdown ────────────────────────────
     st.subheader("🧮 WQI Sub-index Breakdown")
-    st.caption("Per-parameter quality ratings (Qi) from Marutey's CPCB WQI engine. Higher Qi indicates higher pollution contribution.")
+    st.caption("Per-parameter quality ratings (Qi, 0–100) from the Aqua-Sense WQI engine. Only parameters "
+               "that were actually available for the site are shown; none are imputed.")
     
     qi_cols = [c for c in ["qi_do", "qi_bod", "qi_turbidity", "qi_chl_a", "qi_ph"] if c in predictions_df.columns]
     if qi_cols and len(predictions_df) > 0:
@@ -536,8 +547,8 @@ with tab_metrics:
                 "qi_ph":        "pH Deviation (Qi pH)",
             }
             qi_data = [
-                {"Parameter": sub_labels.get(col, col), "Qi Value": round(float(latest_row[col] or 0.0), 1)}
-                for col in qi_cols
+                {"Parameter": sub_labels.get(col, col), "Qi Value": round(float(latest_row[col]), 1)}
+                for col in qi_cols if pd.notna(latest_row[col])
             ]
             qi_df = pd.DataFrame(qi_data)
             fig_qi = px.bar(
@@ -560,20 +571,17 @@ with tab_metrics:
 
     # ── WQI class distribution ────────────────────────────
     if len(latest_preds) > 0 and "wqi" in latest_preds.columns:
-        st.subheader("🎯 WQI Class Distribution Across Sites")
-        latest_preds["wqi_class"] = latest_preds["wqi"].apply(_wqi_class)
-        latest_preds["wqi_label"] = latest_preds["wqi_class"].map(
-            {k: v["label"] for k, v in WQI_CLASSES.items()}
-        )
-        class_counts = latest_preds["wqi_class"].value_counts().reset_index()
-        class_counts.columns = ["class", "count"]
+        st.subheader("🎯 WQI Tier Distribution Across Sites")
+        latest_preds["wqi_tier"] = latest_preds["wqi"].apply(_wqi_class)
+        class_counts = latest_preds["wqi_tier"].dropna().value_counts().reset_index()
+        class_counts.columns = ["tier", "count"]
         color_map = {k: v["color"] for k, v in WQI_CLASSES.items()}
         fig_pie = px.pie(
             class_counts,
-            names="class",
+            names="tier",
             values="count",
-            title="Sites Categorised by CPCB WQI Class",
-            color="class",
+            title="Sites by WQI tier",
+            color="tier",
             color_discrete_map=color_map,
         )
         st.plotly_chart(fig_pie, width='stretch')
@@ -667,10 +675,10 @@ with tab_about:
     2. **Dual-Tier Atmospheric Correction**: ACOLITE (Dark Spectrum Fitting) for sunglint & turbid waters + C2RCC for eutrophic waters.
     3. **DO as a Physical Surrogate Variable**: Models DO dynamics from algal activity, turbidity, and temperature.
 
-    ### CPCB Water Quality Index Scale
-    - **Class A (< 25)**: Excellent — drinking with conventional treatment
-    - **Class B (25–50)**: Good — suitable for outdoor bathing
-    - **Class C (50–75)**: Medium — drinking with extensive purification
-    - **Class D (75–100)**: Bad — propagation of wildlife and fisheries
-    - **Class E (> 100)**: Very Bad — irrigation only / severely polluted (e.g. Buddha Nullah)
+    ### Two separate quality outputs
+    - **WQI (0–100)** — Aqua-Sense's satellite-adapted weighted-arithmetic pollution index
+      (0 pristine, 100 worst; tiers Excellent / Good / Moderate / Poor / Very Poor). Not an official CPCB score.
+    - **CPCB designated-best-use class (A–E)** — assigned from concentration criteria
+      (DO, BOD, pH, coliform, free ammonia, conductivity, SAR, boron) published by CPCB, and only when
+      enough of those parameters were measured.
     """)

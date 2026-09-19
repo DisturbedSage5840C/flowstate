@@ -4,7 +4,7 @@ map_utils.py — Folium/deck.gl layer builders for the Aqua-Sense dashboard (Jas
 Functions
 ---------
 build_wqi_map(predictions_df, sites_cfg)
-    → folium.Map with choropleth WQI heatmap, colour-coded by CPCB A-E class
+    → folium.Map with WQI markers, colour-coded by WQI tier
 
 add_site_markers(fmap, sites_cfg)
     → add circle markers for each preset site
@@ -26,50 +26,43 @@ import numpy as np
 import pandas as pd
 from folium.plugins import HeatMap, MarkerCluster
 
+from src.wqi.wqi_engine import WQI_TIERS, wqi_tier
+
 # ─────────────────────────────────────────────────────────
-# CPCB WQI colour tiers
+# WQI colour tiers — defined once, in src/wqi/wqi_engine.py
 # ─────────────────────────────────────────────────────────
 WQI_CLASSES = {
-    "A": {"range": (0,   25),  "label": "Excellent",  "color": "#2166ac"},
-    "B": {"range": (25,  50),  "label": "Good",       "color": "#4dac26"},
-    "C": {"range": (50,  75),  "label": "Medium",     "color": "#f7c000"},
-    "D": {"range": (75, 100),  "label": "Bad",        "color": "#f46d43"},
-    "E": {"range": (100, 9999),"label": "Very Bad",   "color": "#d73027"},
+    t.label: {"range": (t.lower, t.upper), "label": t.label, "color": t.color} for t in WQI_TIERS
 }
+NO_DATA_COLOR = "#888888"
 
 # Visual ranges for each parameter (for colour normalisation)
 PARAM_RANGES = {
     "chl_a":    (0,   100),   # µg/L
     "turbidity":(0,   200),   # NTU / FNU
     "do":       (0,   14),    # mg/L (inverted: low DO = bad)
+    "bod":      (0,   30),    # mg/L
     "wqi":      (0,   100),
 }
 
 
-def _wqi_class(wqi_value: float) -> str:
-    """Return Marutey WQI class letter (A-E) for a WQI value.
-
-    Scale (pollution-index convention; 0 = pure water):
-        A : <  25  Excellent
-        B : 25–50  Good
-        C : 50–75  Medium
-        D : 75–100 Bad
-        E : > 100  Very Bad (open-ended upper class)
-    """
-    if wqi_value < 25:
-        return "A"
-    elif wqi_value < 50:
-        return "B"
-    elif wqi_value < 75:
-        return "C"
-    elif wqi_value <= 100:
-        return "D"
-    else:
-        return "E"
+def _wqi_class(wqi_value: float):
+    """Tier label ('Excellent' … 'Very Poor') for a 0-100 WQI score, or None for NaN."""
+    tier = wqi_tier(wqi_value)
+    return tier.label if tier else None
 
 
 def _wqi_color(wqi_value: float) -> str:
-    return WQI_CLASSES[_wqi_class(wqi_value)]["color"]
+    tier = wqi_tier(wqi_value)
+    return tier.color if tier else NO_DATA_COLOR
+
+
+def _fmt(value, digits: int) -> str:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "–"
+    return "–" if not np.isfinite(v) else f"{v:.{digits}f}"
 
 
 def _param_color(value: float, param: str) -> str:
@@ -169,12 +162,12 @@ def add_site_markers(
                 val   = float(row["wqi"])
                 color = _wqi_color(val)
                 cls   = _wqi_class(val)
+                label = WQI_CLASSES[cls]["label"] if cls else "n/a"
                 tooltip += (
-                    f"<br>WQI: {val:.1f} "
-                    f"({WQI_CLASSES[cls]['label']})"
-                    f"<br>Chl-a: {row.get('chl_a', '–'):.2f} µg/L"
-                    f"<br>Turbidity: {row.get('turbidity', '–'):.1f} NTU"
-                    f"<br>DO: {row.get('do', '–'):.2f} mg/L"
+                    f"<br>WQI: {val:.1f} ({label})"
+                    f"<br>Chl-a: {_fmt(row.get('chl_a'), 2)} µg/L"
+                    f"<br>Turbidity: {_fmt(row.get('turbidity'), 1)} NTU"
+                    f"<br>DO: {_fmt(row.get('do'), 2)} mg/L"
                 )
             elif parameter in row:
                 val   = float(row[parameter])
@@ -334,19 +327,13 @@ def build_heatmap_layer(
 
 
 def _add_legend(fmap: folium.Map) -> None:
-    """Inject a CPCB WQI legend into the map HTML."""
-    legend_html = """
-    <div style="
-        position: fixed; bottom: 30px; left: 30px; z-index: 9999;
-        background: white; padding: 12px 16px; border-radius: 8px;
-        box-shadow: 2px 2px 8px rgba(0,0,0,0.3); font-size:13px;
-    ">
-        <b>CPCB WQI Classes</b><br>
-        <span style="color:#2166ac">&#9679;</span> A — Excellent (&lt; 25)<br>
-        <span style="color:#4dac26">&#9679;</span> B — Good (25–50)<br>
-        <span style="color:#f7c000">&#9679;</span> C — Medium (50–75)<br>
-        <span style="color:#f46d43">&#9679;</span> D — Bad (75–100)<br>
-        <span style="color:#d73027">&#9679;</span> E — Very Bad (&gt; 100)
-    </div>
-    """
+    """Inject the WQI tier legend into the map HTML."""
+    rows = "<br>".join(
+        f'<span style="color:{t.color}">&#9679;</span> {t.label} ({t.lower:g}–{t.upper:g})' for t in WQI_TIERS
+    )
+    legend_html = (
+        '<div style="position: fixed; bottom: 30px; left: 30px; z-index: 9999; background: white; '
+        'padding: 12px 16px; border-radius: 8px; box-shadow: 2px 2px 8px rgba(0,0,0,0.3); font-size:13px;">'
+        f"<b>WQI (0 = pristine, 100 = worst)</b><br>{rows}</div>"
+    )
     fmap.get_root().html.add_child(folium.Element(legend_html))

@@ -15,7 +15,8 @@ def main():
     ap.add_argument("--end", required=True)
     ap.add_argument("--sensor", choices=["S2", "LS"], default="S2")
     ap.add_argument("--max-cloud", type=float, default=30)
-    ap.add_argument("--mndwi", type=float, default=0.0, help="MNDWI threshold; tune per site first")
+    ap.add_argument("--mndwi", type=float, default=None,
+                    help="override MNDWI threshold (default: per-site value from config/mndwi_thresholds.yaml, else 0.0)")
     ap.add_argument("--project")
     args = ap.parse_args()
 
