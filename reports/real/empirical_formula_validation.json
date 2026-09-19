@@ -1,69 +1,122 @@
 {
-  "rows": 2517,
+  "table": "train_real_large.parquet",
+  "rows": 8461,
   "turbidity_dogliotti_vs_measured": {
-    "n": 851,
-    "spearman_rho": 0.212,
-    "pearson_r": 0.087,
-    "median_ratio_est_over_measured": 13.956,
-    "rmse": 862.374,
-    "r2_identity": -214.472,
-    "pearson_r_log": 0.211,
-    "within_factor_2": 0.165
+    "n": 3159,
+    "spearman_rho": 0.23,
+    "pearson_r": 0.176,
+    "median_ratio_est_over_measured": 11.685,
+    "rmse": 830.347,
+    "r2_identity": -204.902,
+    "pearson_r_log": 0.249,
+    "within_factor_2": 0.163
   },
   "do_surrogate_vs_measured": {
-    "n": 2421,
-    "spearman_rho": 0.121,
-    "pearson_r": 0.133,
-    "median_ratio_est_over_measured": 1.035,
-    "rmse": 2.821,
-    "r2_identity": -0.959
+    "n": 8152,
+    "spearman_rho": 0.04,
+    "pearson_r": 0.067,
+    "median_ratio_est_over_measured": 1.034,
+    "rmse": 2.909,
+    "r2_identity": -1.274
   },
   "ndci_vs_measured_spearman": {
-    "do": -0.259,
-    "bod": 0.398,
-    "turbidity": 0.045
+    "do": -0.254,
+    "bod": 0.304,
+    "turbidity": 0.111
   },
   "chl_a_empirical": "NOT VALIDATED - no in-situ chlorophyll-a exists in CPCB NWDP",
-  "turbidity_by_type": {
+  "turbidity_calibrated_vs_measured": {
+    "n": 3223,
+    "spearman_rho": 0.327,
+    "pearson_r": 0.245,
+    "median_ratio_est_over_measured": 1.048,
+    "rmse": 85.263,
+    "r2_identity": -0.019,
+    "pearson_r_log": 0.337,
+    "within_factor_2": 0.414
+  },
+  "turbidity_calibrated_by_type": {
     "lake": {
-      "n": 168,
-      "spearman_rho": 0.313,
-      "pearson_r": 0.163,
-      "median_ratio_est_over_measured": 5.474,
-      "rmse": 513.623,
-      "r2_identity": -211.018,
-      "pearson_r_log": 0.246,
-      "within_factor_2": 0.244
+      "n": 591,
+      "spearman_rho": 0.283,
+      "pearson_r": 0.207,
+      "median_ratio_est_over_measured": 1.08,
+      "rmse": 35.681,
+      "r2_identity": -0.049,
+      "pearson_r_log": 0.249,
+      "within_factor_2": 0.502
     },
     "reservoir": {
-      "n": 76,
-      "spearman_rho": 0.204,
-      "pearson_r": -0.084,
-      "median_ratio_est_over_measured": 4.962,
-      "rmse": 402.816,
-      "r2_identity": -53.875,
-      "pearson_r_log": 0.138,
-      "within_factor_2": 0.224
+      "n": 206,
+      "spearman_rho": 0.188,
+      "pearson_r": 0.105,
+      "median_ratio_est_over_measured": 1.109,
+      "rmse": 38.734,
+      "r2_identity": -0.073,
+      "pearson_r_log": 0.225,
+      "within_factor_2": 0.466
     },
     "river": {
-      "n": 392,
-      "spearman_rho": 0.322,
-      "pearson_r": 0.183,
-      "median_ratio_est_over_measured": 17.632,
-      "rmse": 980.681,
-      "r2_identity": -320.035,
-      "pearson_r_log": 0.319,
-      "within_factor_2": 0.146
+      "n": 1607,
+      "spearman_rho": 0.326,
+      "pearson_r": 0.262,
+      "median_ratio_est_over_measured": 1.004,
+      "rmse": 106.826,
+      "r2_identity": -0.019,
+      "pearson_r_log": 0.342,
+      "within_factor_2": 0.398
     },
     "unknown": {
-      "n": 215,
-      "spearman_rho": 0.005,
-      "pearson_r": -0.034,
-      "median_ratio_est_over_measured": 25.121,
-      "rmse": 962.621,
-      "r2_identity": -149.621,
-      "pearson_r_log": 0.031,
-      "within_factor_2": 0.116
+      "n": 819,
+      "spearman_rho": 0.255,
+      "pearson_r": 0.186,
+      "median_ratio_est_over_measured": 1.093,
+      "rmse": 70.15,
+      "r2_identity": -0.047,
+      "pearson_r_log": 0.24,
+      "within_factor_2": 0.371
+    }
+  },
+  "turbidity_by_type": {
+    "lake": {
+      "n": 590,
+      "spearman_rho": 0.257,
+      "pearson_r": 0.053,
+      "median_ratio_est_over_measured": 3.352,
+      "rmse": 646.555,
+      "r2_identity": -342.998,
+      "pearson_r_log": 0.227,
+      "within_factor_2": 0.277
+    },
+    "reservoir": {
+      "n": 203,
+      "spearman_rho": 0.202,
+      "pearson_r": -0.02,
+      "median_ratio_est_over_measured": 5.056,
+      "rmse": 405.475,
+      "r2_identity": -116.075,
+      "pearson_r_log": 0.211,
+      "within_factor_2": 0.219
+    },
+    "river": {
+      "n": 1561,
+      "spearman_rho": 0.246,
+      "pearson_r": 0.144,
+      "median_ratio_est_over_measured": 16.064,
+      "rmse": 896.616,
+      "r2_identity": -219.828,
+      "pearson_r_log": 0.274,
+      "within_factor_2": 0.135
+    },
+    "unknown": {
+      "n": 805,
+      "spearman_rho": 0.174,
+      "pearson_r": 0.254,
+      "median_ratio_est_over_measured": 16.117,
+      "rmse": 893.816,
+      "r2_identity": -166.557,
+      "pearson_r_log": 0.206,
+      "within_factor_2": 0.119
     }
   }
 }

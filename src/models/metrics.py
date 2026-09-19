@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from scipy.stats import spearmanr
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 from typing import Optional
 
@@ -55,6 +56,15 @@ def _safe_mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     if len(y_true) == 0:
         return float("nan")
     return float(mean_absolute_error(y_true, y_pred))
+
+
+def _safe_spearman(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Rank correlation: the honest headline number for heavy-tailed targets, where raw R2
+    can be near-zero/negative even when the model recovers useful relative ordering."""
+    y_true, y_pred = _drop_nan_targets(y_true, y_pred)
+    if len(y_true) < 2 or np.std(y_true) == 0 or np.std(y_pred) == 0:
+        return float("nan")
+    return float(spearmanr(y_true, y_pred).correlation)
 
 
 class MetricsReporter:
@@ -134,12 +144,13 @@ class MetricsReporter:
         print("\n" + "=" * 72)
         print("  AQUA-SENSE · Spatial-CV Metrics (per water-body type)")
         print("=" * 72)
-        fmt = "{:<12} {:<14} {:>6} {:>8} {:>10} {:>10}"
-        header = fmt.format("Target", "Water body type", "N", "R²", "RMSE", "MAE")
+        fmt = "{:<12} {:<14} {:>6} {:>8} {:>10} {:>10} {:>10}"
+        header = fmt.format("Target", "Water body type", "N", "R²", "RMSE", "MAE", "Spearman")
         print(header)
         print("-" * 72)
         for _, row in table.iterrows():
             r2_str = f"{row['R2']:.4f}" if not np.isnan(row["R2"]) else "  N/A"
+            sp_str = f"{row['spearman']:.4f}" if not np.isnan(row["spearman"]) else "  N/A"
             print(
                 fmt.format(
                     row["target"],
@@ -148,6 +159,7 @@ class MetricsReporter:
                     r2_str,
                     f"{row['RMSE']:.4f}",
                     f"{row['MAE']:.4f}",
+                    sp_str,
                 )
             )
         print("=" * 72 + "\n")
@@ -176,6 +188,7 @@ class MetricsReporter:
             "R2": _safe_r2(y_true, y_pred),
             "RMSE": _rmse(y_true, y_pred),
             "MAE": _safe_mae(y_true, y_pred),
+            "spearman": _safe_spearman(y_true, y_pred),
         }
         # Heavy-tailed targets: raw-scale R2/RMSE are dominated by a few extreme values, so also report R2 on the
         # log1p scale (NaN for other targets).

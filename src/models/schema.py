@@ -6,7 +6,23 @@ Two tables exist:
 """
 
 # Spectral features available for every real visit (water temperature has no in-situ or satellite source here).
-REAL_FEATURE_COLS = ["B2", "B3", "B4", "B5", "B6", "B8", "B11", "ndci", "bdm2", "bdm3", "red_green", "nir"]
+# is_river/is_lake/is_reservoir one-hot the CPCB-reported water_body_type ("unknown" is the implicit
+# all-zero baseline). Rivers show a materially different, steeper reflectance-turbidity relationship than
+# still water (see reports/real/empirical_formula_validation.json), so this lets the tree split on type
+# instead of every target being forced through one pooled relationship.
+WATER_BODY_TYPES = ("river", "lake", "reservoir")
+
+# DO/BOD are not optically active -- reflectance bands alone cannot see sewage or dissolved oxygen.
+# These are non-satellite context features standing in for the two real physical drivers reflectance
+# misses: rainfall-driven runoff (src.data.weather) and nearby urban/industrial discharge
+# (src.data.city_proximity). "post_monsoon" (Oct-Nov) is the implicit all-zero season baseline.
+SEASONS = ("winter", "summer", "monsoon")
+RAINFALL_COLS = ["rain_3d_mm", "rain_7d_mm", "rain_14d_mm", "rain_30d_mm"]
+URBAN_PROXY_COLS = ["dist_nearest_city_km", "urban_load_index"]
+
+REAL_FEATURE_COLS = ["B2", "B3", "B4", "B5", "B6", "B8", "B11", "ndci", "bdm2", "bdm3", "red_green", "nir",
+                     "is_river", "is_lake", "is_reservoir",
+                     "is_winter", "is_summer", "is_monsoon", *RAINFALL_COLS, *URBAN_PROXY_COLS]
 REAL_TARGET_COLS = ["do", "bod", "turbidity"]          # real labels; Chl-a has no ground truth
 
 # Synthetic demo table (includes a simulated surface temperature and a simulated Chl-a label).
@@ -18,3 +34,19 @@ SYNTH_TARGET_COLS = ["chl_a", "turbidity", "do"]
 LOG_TARGETS = ("bod", "turbidity", "chl_a")
 
 META_COLS = ["site", "water_body_type", "lat", "lon", "date", "sensor"]
+
+
+def add_water_body_onehot(df):
+    """Add is_river/is_lake/is_reservoir boolean columns from ``water_body_type`` (in place semantics avoided: returns df)."""
+    for t in WATER_BODY_TYPES:
+        df[f"is_{t}"] = (df["water_body_type"] == t).astype(int)
+    return df
+
+
+def add_season_onehot(df):
+    """Add is_winter/is_summer/is_monsoon from ``date`` month (Dec-Feb/Mar-May/Jun-Sep; Oct-Nov is baseline)."""
+    month = df["date"].dt.month
+    df["is_winter"] = month.isin([12, 1, 2]).astype(int)
+    df["is_summer"] = month.isin([3, 4, 5]).astype(int)
+    df["is_monsoon"] = month.isin([6, 7, 8, 9]).astype(int)
+    return df

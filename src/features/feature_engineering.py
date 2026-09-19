@@ -44,6 +44,22 @@ DOGLIOTTI_BLEND = (0.05, 0.07)  # red reflectance range over which red->NIR blen
 MISHRA_NDCI_COEFFS = (14.039, 86.115, 194.325)
 NDCI_VALID_RANGE = (-0.1, 0.5)
 
+# Locally recalibrated turbidity power law: T = a * B4^b [NTU], fit by log-log regression of
+# real CPCB NWDP turbidity against Sentinel-2 B4 (red) reflectance (data/processed/train_real_large.parquet,
+# n=3223, see scripts/calibrate_empirical_formulas.py). Unlike NECHAD_RED/NECHAD_NIR above, which are
+# unmodified literature constants for a different sensor/region, these coefficients are fit directly on the
+# real ground truth this project measures against, and fix the ~10x median overestimate documented in
+# reports/real/empirical_formula_validation.json. Fit per water-body type where the type has an optically
+# distinct sediment/turbidity relationship (rivers carry more suspended sediment per unit reflectance than
+# still water); "unknown"/unrecognised types and Landsat (no B4-only fit was done for LS) fall back to GLOBAL.
+TURBIDITY_CALIBRATION_GLOBAL = (56.49, 0.68)
+TURBIDITY_CALIBRATION_BY_TYPE = {
+    "river": (107.49, 0.89),
+    "lake": (32.15, 0.42),
+    "reservoir": (21.17, 0.47),
+    "unknown": (40.12, 0.66),
+}
+
 
 def _safe_divide(num, den, fill: float = np.nan) -> np.ndarray:
     """Element-wise division, filling zeros in denominator with `fill`."""
@@ -129,6 +145,35 @@ def compute_turbidity_dogliotti(red, nir) -> np.ndarray:
     return blended.astype(np.float32)
 
 
+def compute_turbidity_calibrated(red, water_body_type=None) -> np.ndarray:
+    """Locally recalibrated turbidity (NTU): T = a * red^b, fit on real CPCB data.
+
+    Unlike ``compute_turbidity_dogliotti`` (unmodified literature constants, ~3.5-14x
+    overestimate bias vs measured CPCB turbidity), this is refit directly on real ground
+    truth. If ``water_body_type`` is given (array-like, aligned with ``red``), each row uses
+    its type's coefficients from ``TURBIDITY_CALIBRATION_BY_TYPE`` (falling back to the
+    global fit for types not in that table); otherwise the global fit is used for all rows.
+    Negative/zero reflectance yields NaN (the power law is undefined there).
+    """
+    red = np.asarray(red, dtype=np.float64)
+    with np.errstate(invalid="ignore"):
+        safe_red = np.where(red > 0, red, np.nan)
+
+    if water_body_type is None:
+        a, b = TURBIDITY_CALIBRATION_GLOBAL
+        return (a * np.power(safe_red, b)).astype(np.float32)
+
+    wbt = np.asarray(water_body_type, dtype=object)
+    a_glob, b_glob = TURBIDITY_CALIBRATION_GLOBAL
+    a = np.full(wbt.shape, a_glob, dtype=np.float64)
+    b = np.full(wbt.shape, b_glob, dtype=np.float64)
+    for t, (a_t, b_t) in TURBIDITY_CALIBRATION_BY_TYPE.items():
+        mask = wbt == t
+        a[mask] = a_t
+        b[mask] = b_t
+    return (a * np.power(safe_red, b)).astype(np.float32)
+
+
 def compute_chl_a_from_ndci(ndci) -> np.ndarray:
     """Chl-a (ug/L) from NDCI: c0 + c1*NDCI + c2*NDCI^2 (Mishra & Mishra 2012 form).
 
@@ -197,6 +242,9 @@ def compute_all_features(df: pd.DataFrame, sensor: str = "S2") -> pd.DataFrame:
         df["mndwi"] = compute_mndwi(b3, swir)
         df["nir"] = nir.astype(np.float32)
         df["turbidity_empirical"] = compute_turbidity_dogliotti(b4, nir)
+        # Global fit only: TURBIDITY_CALIBRATION was fit on Sentinel-2 B4, not Landsat's
+        # differently-centred red band, so per-type coefficients are not applied here.
+        df["turbidity_calibrated"] = compute_turbidity_calibrated(b4)
         return df
 
     _require(df, S2_REQUIRED, sensor)
@@ -210,6 +258,8 @@ def compute_all_features(df: pd.DataFrame, sensor: str = "S2") -> pd.DataFrame:
     df["mndwi"] = compute_mndwi(b3, b11)
     df["nir"] = b8.astype(np.float32)
     df["turbidity_empirical"] = compute_turbidity_dogliotti(b4, b8)
+    wbt = df["water_body_type"].to_numpy() if "water_body_type" in df.columns else None
+    df["turbidity_calibrated"] = compute_turbidity_calibrated(b4, water_body_type=wbt)
     df["chl_a_empirical"] = compute_chl_a_from_ndci(df["ndci"].to_numpy())
 
     if "date" in df.columns:

@@ -5,11 +5,13 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from src.data.city_proximity import urban_proxy_features
 from src.features.feature_engineering import compute_all_features
 from src.wqi.wqi_engine import classify_cpcb_best_use, compute_wqi_dataframe
 
 from src.models.schema import REAL_FEATURE_COLS as FEATURE_COLS_REAL  # single source of truth
 from src.models.schema import REAL_TARGET_COLS as TARGETS               # real labels; Chl-a has no in-situ source
+from src.models.schema import RAINFALL_COLS, add_season_onehot, add_water_body_onehot
 
 BANDS = ["B2", "B3", "B4", "B5", "B6", "B8", "B11"]
 
@@ -24,11 +26,15 @@ def quality_filter(refl: pd.DataFrame, min_water_px: int = 20, min_b3: float = 0
 
 
 def build_training_table(insitu: pd.DataFrame, refl: pd.DataFrame, min_water_px: int = 20,
-                         temperature: pd.DataFrame | None = None) -> pd.DataFrame:
+                         temperature: pd.DataFrame | None = None,
+                         rainfall: pd.DataFrame | None = None) -> pd.DataFrame:
     """One row per (station, date): real labels + median water reflectance + spectral features.
 
     ``temperature`` (optional, from src.data.landsat_temp) supplies ``temp_surface`` in deg C where a Landsat
     thermal retrieval exists; every other row keeps NaN (never a constant).
+    ``rainfall`` (optional, from src.data.weather.antecedent_rainfall_features, already aligned to
+    (station, date) visits) supplies the RAINFALL_COLS; omitted, they are NaN (requires network access
+    this project does not always have, so it is injected rather than fetched inside this function).
     """
     good = quality_filter(refl, min_water_px)
     good = good.assign(date=pd.to_datetime(good["date"]))
@@ -53,6 +59,14 @@ def build_training_table(insitu: pd.DataFrame, refl: pd.DataFrame, min_water_px:
     df["sensor"] = "S2"
     df["date"] = pd.to_datetime(df["date"])
     df = compute_all_features(df, sensor="S2")
+    df = add_water_body_onehot(df)
+    df = add_season_onehot(df)
+    df = df.join(urban_proxy_features(df["lat"], df["lon"]))
+    if rainfall is not None and len(rainfall):
+        df = df.merge(rainfall[["site", "date", *RAINFALL_COLS]], on=["site", "date"], how="left")
+    else:
+        for c in RAINFALL_COLS:
+            df[c] = np.nan
     df = df.rename(columns={"chl_a_empirical": "chl_a_empirical"})   # kept under its honest name
 
     df = compute_wqi_dataframe(df)                      # from measured DO/BOD/pH/turbidity/conductivity

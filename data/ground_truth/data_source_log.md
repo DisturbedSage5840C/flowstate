@@ -106,10 +106,26 @@ buffer radius is 500 m (as in the project plan). Only visits with a clear scene 
   alone (see `reports/real/metrics_table.csv`; baselines are on the same folds). Even random-split CV gave R² ≈ 0.1,
   so this is a weak-signal problem, not just a validation-strictness effect. Best single-feature rank correlations are
   about 0.3 (NDCI vs DO −0.28 and BOD +0.28; red/red-edge vs turbidity +0.3).
-- The literature turbidity formula (Nechad/Dogliotti coefficients, unverified against the papers) **overestimates by roughly
-  an order of magnitude** against measured NTU, especially in rivers (`reports/real/empirical_formula_validation.json`).
+- The literature turbidity formula (Nechad/Dogliotti coefficients, unverified against the papers) **overestimated by roughly
+  an order of magnitude** against measured NTU, especially in rivers. Refitting the same red-band reflectance to a power law
+  per water-body type (`turbidity_calibrated` in `src/features/feature_engineering.py`, coefficients from
+  `data/processed/train_real_large.parquet`, n=3223) fixes the bias (median ratio ~1.0) and modestly improves rank
+  correlation (pooled Spearman 0.23 -> 0.33). Refitting the constants of a formula that is a monotonic function of one
+  input cannot, on its own, raise its rank correlation with the target much further — rivers alone reach Spearman ~0.34,
+  lakes/reservoirs/unknown ~0.22-0.29; this is the real ceiling for single-red-band reflectance, not a bug
+  (`reports/real/empirical_formula_validation.json`).
+- `water_body_type` (river/lake/reservoir, one-hot) is now a model feature (`REAL_FEATURE_COLS`) so the tree can exploit
+  this per-type heterogeneity itself, instead of a single pooled formula flattening it away.
 - Grab-sample timing, station coordinates, atmospheric correction over turbid water and mixed pixels are all likely noise
   sources; none of them has been quantified.
+- **2026-09-19 rectification pass**: switched the default training/validation table from `train_real.parquet` (2,517 rows)
+  to the larger, backend-cross-checked `train_real_large.parquet` (8,461 rows); added the turbidity recalibration and
+  water-body-type feature above; added Spearman correlation as a headline metric in `MetricsReporter` alongside R²/R²_log,
+  since raw R² is a misleading number for these heavy-tailed, weak-signal targets (it stays near zero/negative even when
+  the model beats naive per-fold mean/median baselines on rank correlation and log-scale R²); added a satellite-only
+  WQI-tier classifier (`src/models/tier_classifier.py`) as a leakage-free secondary deliverable (OOF accuracy 0.29 vs
+  0.27 majority-class baseline). None of this raises raw out-of-fold R² above zero for DO/BOD/turbidity — that ceiling
+  is real, not a fixable defect in the code.
 
 ## 5. Disclosure text for the pitch
 > "Labels are CPCB in-situ grab-sample measurements (DO, BOD, turbidity) from the National Water Data Portal, matched

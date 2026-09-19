@@ -15,7 +15,9 @@ from scipy import stats
 
 from src.data import nwdp
 
-TABLE = nwdp.ROOT / "data" / "processed" / "train_real.parquet"
+TABLE_LARGE = nwdp.ROOT / "data" / "processed" / "train_real_large.parquet"
+TABLE_SMALL = nwdp.ROOT / "data" / "processed" / "train_real.parquet"
+TABLE = TABLE_LARGE if TABLE_LARGE.exists() else TABLE_SMALL
 OUT = nwdp.ROOT / "reports" / "real" / "empirical_formula_validation.json"
 
 
@@ -45,6 +47,7 @@ def compare(measured: pd.Series, estimate: pd.Series, log: bool = False) -> dict
 def main():
     t = pd.read_parquet(TABLE)
     res = {
+        "table": TABLE.name,
         "rows": int(len(t)),
         "turbidity_dogliotti_vs_measured": compare(t["turbidity"], t["turbidity_empirical"], log=True),
         "do_surrogate_vs_measured": compare(t["do"], t["do_empirical"]),
@@ -53,6 +56,11 @@ def main():
         },
         "chl_a_empirical": "NOT VALIDATED - no in-situ chlorophyll-a exists in CPCB NWDP",
     }
+    if "turbidity_calibrated" in t.columns:
+        res["turbidity_calibrated_vs_measured"] = compare(t["turbidity"], t["turbidity_calibrated"], log=True)
+        for water_type, g in t.groupby("water_body_type"):
+            res.setdefault("turbidity_calibrated_by_type", {})[water_type] = compare(
+                g["turbidity"], g["turbidity_calibrated"], log=True)
     for water_type, g in t.groupby("water_body_type"):
         res.setdefault("turbidity_by_type", {})[water_type] = compare(
             g["turbidity"], g["turbidity_empirical"], log=True)
