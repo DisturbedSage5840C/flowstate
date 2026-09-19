@@ -6,6 +6,12 @@ No geo/time-matched in-situ Chl-a data was found for the chosen sites.
 All labels are **literature-calibrated proxy labels** as per the plan's fallback path (Section 3, path 3).
 This is openly disclosed.
 
+`master_table.csv` carries this disclosure in its own columns: `source_document` is
+`illustrative` and `is_proxy` is `True` for every row, since no row is backed by a checkable,
+retrievable source document or URL (`source_url`/`retrieved_on` are blank for the same reason).
+`proxy_method` (formerly `source`) records which proxy formula/region calibration produced the
+row, not a citation.
+
 ---
 
 ## Sites and Sources
@@ -15,7 +21,7 @@ This is openly disclosed.
 | Bellandur | lake | Karnataka | `proxy_nechad_ndci` | NDCI-based Chl-a (Gitelson 1992); Nechad turbidity; DO inferred from eutrophication events |
 | Varthur | lake | Karnataka | `proxy_nechad_ndci` | Same as Bellandur; froth incidents (2015–2024) cross-checked |
 | Ulsoor | lake | Karnataka | `proxy_nechad_ndci` | Cleaner lake; lower Chl-a range |
-| Yamuna Delhi | river | Delhi | `cpcb_wqms_proxy` | CPCB WQMS stations at Palla, Nizamuddin; BOD/DO published online; Chl-a proxied via OC3 |
+| Yamuna Delhi | river | Delhi | `cpcb_wqms_proxy` | Named for CPCB WQMS stations at Palla, Nizamuddin as the qualitative sanity-check reference (no readings retrieved/joined); Chl-a proxied via OC3, BOD/DO from the proxy formulas below |
 | Ganga Kanpur | river | UP | `cpcb_nwmp_proxy` | CPCB NWMP data; Chl-a proxied; monsoon turbidity spike cross-checked |
 | Ganga Varanasi | river | UP | `cpcb_nwmp_proxy` | Same as Kanpur |
 | Sutlej Ludhiana | river | Punjab | `cpcb_ppcb_proxy` | PPCB reports; high industrial load |
@@ -48,7 +54,9 @@ This is openly disclosed.
 - Cross-checked: Buddha Nullah DO < 1 mg/L (documented); Bellandur DO < 2 mg/L in summer
 
 ### BOD (mg/L)
-- Where CPCB data available, used directly
+- No CPCB BOD readings were retrieved or used directly for any site in this dataset — every BOD
+  value in `master_table.csv` is computed from the proxy formula below. See "Disclosure for Pitch"
+  for why this distinction matters.
 - Proxy: `BOD ≈ 0.35 * (Chl-a^0.72) * turbidity_factor` (empirical calibration for Indian urban lakes)
 
 ---
@@ -66,4 +74,12 @@ within 500 m radius of the station.
 ---
 
 ## Disclosure for Pitch
-> "All training labels are literature-calibrated proxy labels derived from empirical remote-sensing algorithms (NDCI, Nechad turbidity) and CPCB published BOD/DO values. The ML model acts as a nonlinear corrector on top of the empirical baseline. We validate against documented pollution events (Bellandur froth, Yamuna foam at Kalindi Kunj, Buddha Nullah) rather than withheld in-situ data. Real in-situ validation would be the next step for production deployment."
+> "All training labels are illustrative, literature-calibrated proxy labels derived entirely from
+> empirical remote-sensing algorithms (NDCI Chl-a, Nechad turbidity, a DO surrogate, and a BOD
+> proxy formula) — no in-situ or CPCB-published readings were retrieved or joined into this
+> dataset. CPCB/PPCB station names are cited only as the qualitative basis for choosing plausible
+> proxy coefficients per site, not as a data source. The ML model acts as a nonlinear corrector on
+> top of the empirical baseline. We sanity-check orders of magnitude against documented pollution
+> events (Bellandur froth, Yamuna foam at Kalindi Kunj, Buddha Nullah) rather than validating
+> against withheld in-situ data. Real in-situ validation would be the next step for production
+> deployment."

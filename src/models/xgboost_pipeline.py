@@ -117,6 +117,13 @@ class WaterQualityXGB:
         Returns
         -------
         dict[target → best spatial-CV RMSE]
+
+        Note on selection bias: this RMSE is the minimum over `n_trials`
+        Optuna trials, each scored on the same CV folds. Picking the best of
+        many trials on the same folds is itself a (mild) form of overfitting
+        to those folds, so this number is optimistically biased relative to
+        performance on a truly held-out set. Use predict_oof() on a separate
+        partition, or a nested CV, for an unbiased estimate.
         """
         results = {}
         for target in self.targets:
@@ -127,7 +134,7 @@ class WaterQualityXGB:
                 print(f"\n[XGB] Tuning for target: {target}  ({n_trials} trials)")
             best_rmse, best_params = self._tune(df, target, n_trials)
             # Refit on full data with best params (no early stopping without eval_set)
-            model = self._build_model(best_params, early_stopping=False)
+            model = self._build_model(best_params)
             X = df[self.feature_cols]
             y = df[target]
             model.fit(X, y)
@@ -246,7 +253,7 @@ class WaterQualityXGB:
             y = df[target]
             params = self._best_params[target]
             for train_idx, val_idx in splits:
-                model = self._build_model(params, early_stopping=False)
+                model = self._build_model(params)
                 model.fit(X.iloc[train_idx], y.iloc[train_idx])
                 raw = model.predict(X.iloc[val_idx])
                 oof[target][val_idx] = self._clip(raw, target)
@@ -312,15 +319,15 @@ class WaterQualityXGB:
                     "min_child_weight", *SEARCH_SPACE["min_child_weight"]
                 ),
             }
+            # No early stopping here: early_stopping_rounds watches the same
+            # val fold this trial is scored against, so the number of trees
+            # would be chosen using knowledge of the held-out fold -- a leak
+            # into the CV score. n_estimators is already a tuned
+            # hyperparameter (SEARCH_SPACE), so it alone controls tree count.
             model = self._build_model(params)
             fold_rmses = []
             for train_idx, val_idx in splits:
-                model.fit(
-                    X.iloc[train_idx],
-                    y.iloc[train_idx],
-                    eval_set=[(X.iloc[val_idx], y.iloc[val_idx])],
-                    verbose=False,
-                )
+                model.fit(X.iloc[train_idx], y.iloc[train_idx])
                 preds = model.predict(X.iloc[val_idx])
                 fold_rmses.append(
                     float(np.sqrt(mean_squared_error(y.iloc[val_idx], preds)))
@@ -334,18 +341,14 @@ class WaterQualityXGB:
         study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
         return study.best_value, study.best_params
 
-    def _build_model(self, params: dict, early_stopping: bool = True) -> xgb.XGBRegressor:
-        kwargs = dict(
+    def _build_model(self, params: dict) -> xgb.XGBRegressor:
+        return xgb.XGBRegressor(
             tree_method="hist",
             random_state=self.random_state,
             n_jobs=2,
             verbosity=0,
             **params,
         )
-        if early_stopping:
-            kwargs["early_stopping_rounds"] = 30
-            kwargs["eval_metric"] = "rmse"
-        return xgb.XGBRegressor(**kwargs)
 
     @staticmethod
     def _clip(values: np.ndarray, target: str) -> np.ndarray:

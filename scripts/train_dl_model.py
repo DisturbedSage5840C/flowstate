@@ -17,7 +17,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import r2_score, mean_squared_error
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 DATA_PATH   = Path("data/processed/train.parquet")
@@ -25,6 +24,7 @@ REPORTS_DIR = Path("reports")
 MODEL_PATH  = REPORTS_DIR / "dl_model.pt"
 SCALER_PATH = REPORTS_DIR / "dl_scaler.pkl"
 METRICS_PATH = REPORTS_DIR / "metrics.json"
+METRICS_TABLE_PATH = REPORTS_DIR / "dl_metrics_table.csv"
 
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -36,6 +36,7 @@ from src.models.dl_model import (
     TARGET_COLS,
 )
 from src.models.spatial_cv import SpatialKFold
+from src.models.metrics import MetricsReporter
 
 # ── Config ────────────────────────────────────────────────────────────────────
 EPOCHS      = 60
@@ -122,50 +123,44 @@ def get_preds_targets(trainer_obj, split_df):
 # Overall test metrics
 test_preds, test_targets = get_preds_targets(best_trainer, test_df)
 
-def safe_r2(y_true, y_pred):
-    mask = ~np.isnan(y_true)
-    if mask.sum() < 2:
-        return 0.0
-    return float(r2_score(y_true[mask], y_pred[mask]))
-
-def safe_rmse(y_true, y_pred):
-    mask = ~np.isnan(y_true)
-    if mask.sum() == 0:
-        return 0.0
-    return float(np.sqrt(mean_squared_error(y_true[mask], y_pred[mask])))
-
-overall = {}
-for i, col in enumerate(TARGET_COLS):
-    overall[f"{col}_r2"]   = safe_r2(test_targets[:, i], test_preds[:, i])
-    overall[f"{col}_rmse"] = safe_rmse(test_targets[:, i], test_preds[:, i])
-
-# Per-type metrics (on test set). A type absent from this particular
-# test-fold draw (e.g. the fold happened to be all lakes) gets None/NaN,
-# not a literal 0.0 -- 0.0 would misleadingly read as "the model scored
-# zero on this type" when really it was never evaluated on it at all.
-per_type = {}
-if "water_body_type" in test_df.columns:
-    for wtype in ("lake", "river"):
-        mask_type = test_df["water_body_type"] == wtype
-        if mask_type.sum() == 0:
-            per_type[wtype] = {f"{c}_r2": None for c in TARGET_COLS}
-            continue
-        sub_df = test_df[mask_type].copy()
-        # Align indices to preds array
-        idx = test_df.index[mask_type.values].tolist()
-        all_idx = test_df.index.tolist()
-        row_positions = [all_idx.index(i) for i in idx]
-        sub_preds   = test_preds[row_positions, :]
-        sub_targets = test_targets[row_positions, :]
-        type_metrics = {}
-        for i, col in enumerate(TARGET_COLS):
-            type_metrics[f"{col}_r2"] = safe_r2(sub_targets[:, i], sub_preds[:, i])
-        per_type[wtype] = type_metrics
+# Reset index so row order matches test_preds/test_targets (built with
+# shuffle=False), then hand off to the same MetricsReporter XGBoost uses
+# (src/models/metrics.py) so both models are scored with identical,
+# NaN-aware R2/RMSE/MAE code -- no separately hand-rolled safe_r2/safe_rmse.
+test_df_aligned = test_df.reset_index(drop=True)
+df_true = test_df_aligned[TARGET_COLS].copy()
+if "water_body_type" in test_df_aligned.columns:
+    df_true["water_body_type"] = test_df_aligned["water_body_type"]
 else:
-    per_type = {
-        "lake":  {f"{c}_r2": None for c in TARGET_COLS},
-        "river": {f"{c}_r2": None for c in TARGET_COLS},
-    }
+    df_true["water_body_type"] = "unknown"
+df_pred = pd.DataFrame(test_preds, columns=TARGET_COLS)
+
+reporter = MetricsReporter(targets=TARGET_COLS)
+metrics_table = reporter.report(df_true, df_pred)
+metrics_table.to_csv(METRICS_TABLE_PATH, index=False)
+reporter.print_table(metrics_table)
+
+# Dashboard-facing summary derived from the same tidy table (no separate
+# computation) -- overall row per target, plus a per-type pivot.
+overall = {}
+for target in TARGET_COLS:
+    row = metrics_table[
+        (metrics_table["target"] == target) & (metrics_table["water_body_type"] == "overall")
+    ].iloc[0]
+    overall[f"{target}_r2"] = float(row["R2"])
+    overall[f"{target}_rmse"] = float(row["RMSE"])
+
+per_type = {}
+for wtype in ("lake", "river"):
+    wtype_rows = metrics_table[metrics_table["water_body_type"] == wtype]
+    if wtype_rows.empty:
+        per_type[wtype] = {f"{c}_r2": None for c in TARGET_COLS}
+        continue
+    type_metrics = {}
+    for target in TARGET_COLS:
+        match = wtype_rows[wtype_rows["target"] == target]
+        type_metrics[f"{target}_r2"] = float(match.iloc[0]["R2"]) if len(match) else None
+    per_type[wtype] = type_metrics
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 7. Save metrics.json
@@ -183,6 +178,7 @@ with open(METRICS_PATH, "w") as f:
     json.dump(metrics, f, indent=2)
 
 print(f"\nMetrics saved -> {METRICS_PATH}")
+print(f"Tidy metrics table (same schema as XGBoost's metrics_table.csv) -> {METRICS_TABLE_PATH}")
 print("\nFinal metrics:")
 print(json.dumps(metrics, indent=2))
 print("\n[OK] Training complete.")

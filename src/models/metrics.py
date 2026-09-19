@@ -29,15 +29,32 @@ TARGET_COLS = ["chl_a", "turbidity", "do"]
 WATER_BODY_TYPES = ["lake", "river", "reservoir", "lagoon"]
 
 
+def _drop_nan_targets(y_true: np.ndarray, y_pred: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Drop rows with missing ground truth (some targets aren't measured for every row)."""
+    mask = ~np.isnan(y_true)
+    return y_true[mask], y_pred[mask]
+
+
 def _rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    y_true, y_pred = _drop_nan_targets(y_true, y_pred)
+    if len(y_true) == 0:
+        return float("nan")
     return float(np.sqrt(mean_squared_error(y_true, y_pred)))
 
 
 def _safe_r2(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """R² can be negative; return NaN if fewer than 2 samples."""
+    """R² can be negative; return NaN if fewer than 2 (non-missing) samples."""
+    y_true, y_pred = _drop_nan_targets(y_true, y_pred)
     if len(y_true) < 2:
         return float("nan")
     return float(r2_score(y_true, y_pred))
+
+
+def _safe_mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    y_true, y_pred = _drop_nan_targets(y_true, y_pred)
+    if len(y_true) == 0:
+        return float("nan")
+    return float(mean_absolute_error(y_true, y_pred))
 
 
 class MetricsReporter:
@@ -153,10 +170,10 @@ class MetricsReporter:
         return {
             "target": target,
             "water_body_type": wbt,
-            "n": len(y_true),
+            "n": int(np.sum(~np.isnan(y_true))),
             "R2": _safe_r2(y_true, y_pred),
             "RMSE": _rmse(y_true, y_pred),
-            "MAE": float(mean_absolute_error(y_true, y_pred)),
+            "MAE": _safe_mae(y_true, y_pred),
         }
 
 

@@ -172,7 +172,17 @@ def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
     and optionally B6 (S2) / B5_L (Landsat), computes all spectral indices.
 
     Adds columns:
-        ndci, bdm2, bdm3, red_green, nir, turbidity, chl_a, do, mndwi
+        ndci, bdm2, bdm3, red_green, nir, mndwi,
+        turbidity_empirical, chl_a_empirical, do_empirical
+
+    The `_empirical` suffix on turbidity/chl_a/do marks these as formula-derived
+    proxies (Nechad turbidity, NDCI-Chl-a regression, DO surrogate) — never
+    ground truth. They intentionally do NOT reuse the `turbidity`/`chl_a`/`do`
+    names used as model TARGET_COLS elsewhere in the repo: a column that shares
+    a target's name but is actually a deterministic function of the model's
+    own FEATURE_COLS would let a model reconstruct the label algebraically
+    instead of learning a genuine band -> water-quality relationship (see the
+    label-leakage bug fixed in scripts/generate_synthetic_train.py).
 
     Args:
         df: DataFrame with band reflectance columns (float, 0-1 scale)
@@ -202,9 +212,9 @@ def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
     turb_red = compute_nechad_turbidity(b4, branch="red")
     turb_nir = compute_nechad_turbidity(b8, branch="nir",
                                          A_T=1528.0, B_T=0.1641, C_T=0.3742)
-    df["turbidity"] = np.where(turb_red > 50, turb_nir, turb_red)
+    df["turbidity_empirical"] = np.where(turb_red > 50, turb_nir, turb_red)
 
-    df["chl_a"] = compute_chl_a_from_ndci(df["ndci"].values)
+    df["chl_a_empirical"] = compute_chl_a_from_ndci(df["ndci"].values)
 
     # DO surrogate — use month from date column if present
     month = 6  # default
@@ -214,9 +224,9 @@ def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
         except Exception:
             pass
 
-    df["do"] = compute_do_surrogate(
-        df["chl_a"].values,
-        df["turbidity"].values,
+    df["do_empirical"] = compute_do_surrogate(
+        df["chl_a_empirical"].values,
+        df["turbidity_empirical"].values,
         month=month,
     )
 
