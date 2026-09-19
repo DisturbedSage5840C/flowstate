@@ -52,28 +52,77 @@ def run_acolite(safe_path: Path | str, site: Site, out_dir: Path | str = INTERIM
     return out_dir
 
 
+def c2rcc_graph_xml() -> str:
+    """GPT graph: Read -> Resample -> Subset -> c2rcc.msi -> Write (GeoTIFF).
+
+    Why a graph rather than ``gpt c2rcc.msi ...`` on the command line: c2rcc.msi needs a
+    *resampled* L1C product (Sentinel-2 bands have mixed 10/20/60 m grids) and has no region
+    parameter, so resampling and subsetting are separate operators. Variables ${input},
+    ${output} and ${region} are passed with -P on the gpt command line.
+
+    UNTESTED: SNAP is not installed in the development environment. Parameter names follow the
+    SNAP operator help (``gpt -h c2rcc.msi``); run that on your install and adjust if needed.
+    """
+    return """<graph id="c2rcc_msi">
+  <version>1.0</version>
+  <node id="Read">
+    <operator>Read</operator>
+    <parameters><file>${input}</file></parameters>
+  </node>
+  <node id="Resample">
+    <operator>Resample</operator>
+    <sources><sourceProduct refid="Read"/></sources>
+    <parameters><targetResolution>20</targetResolution></parameters>
+  </node>
+  <node id="Subset">
+    <operator>Subset</operator>
+    <sources><sourceProduct refid="Resample"/></sources>
+    <parameters><geoRegion>${region}</geoRegion><copyMetadata>true</copyMetadata></parameters>
+  </node>
+  <node id="C2RCC">
+    <operator>c2rcc.msi</operator>
+    <sources><sourceProduct refid="Subset"/></sources>
+    <parameters><outputAsRrs>true</outputAsRrs><outputKd>true</outputKd></parameters>
+  </node>
+  <node id="Write">
+    <operator>Write</operator>
+    <sources><sourceProduct refid="C2RCC"/></sources>
+    <parameters><file>${output}</file><formatName>GeoTIFF</formatName></parameters>
+  </node>
+</graph>
+"""
+
+
 def run_c2rcc(safe_path: Path | str, site: Site, out_dir: Path | str = INTERIM / "c2rcc",
               timeout: int = 3600) -> Path:
-    """SNAP c2rcc.msi neural-network inversion (tier 2: hypereutrophic / CDOM-rich)."""
+    """SNAP c2rcc.msi neural-network inversion (tier 2: hypereutrophic / CDOM-rich). UNTESTED (no SNAP here)."""
     gpt = os.environ.get("SNAP_GPT", "gpt")
     out_dir = Path(out_dir) / site.name
     out_dir.mkdir(parents=True, exist_ok=True)
     w, s, e, n = site.bbox
     wkt = f"POLYGON(({w} {s},{e} {s},{e} {n},{w} {n},{w} {s}))"
+    graph = out_dir / "c2rcc_msi_graph.xml"
+    graph.write_text(c2rcc_graph_xml())
     out = out_dir / f"{Path(safe_path).stem}_c2rcc.tif"
-    _run([gpt, "c2rcc.msi", f"-Ssource={safe_path}", "-Pvalid_pixel_expression=B8 > 0",
-          "-PoutputRrs=true", "-PoutputKd=true", f"-Pregion={wkt}", "-t", str(out), "-f", "GeoTIFF"], timeout)
+    _run([gpt, str(graph), f"-Pinput={safe_path}", f"-Poutput={out}", f"-Pregion={wkt}"], timeout)
     if not out.exists():
         raise CorrectionError("C2RCC produced no output")
     return out
 
 
 def correct_scene(safe_path: Path | str, site: Site, method: str = "auto") -> dict:
-    """Route by water type: rivers/turbid -> ACOLITE DSF, lakes -> both (C2RCC for eutrophic).
+    """Run the correction tier(s) for a site and, for ACOLITE, produce a pipeline-ready raster.
 
-    Returns {'method': ..., 'outputs': [...]} or {'method': 'gee_sr_fallback'} when tooling fails,
-    signalling the caller to use src.acquisition.gee.fetch_scenes surface reflectance instead.
+    Routing is a STATIC site-type rule, not per-pixel dynamic routing: rivers -> ACOLITE DSF; lakes and
+    reservoirs -> ACOLITE and C2RCC. Returns ``{'method', 'outputs', 'correction_method'}``:
+
+    * after a successful ACOLITE run ``contract_tif`` is a ``{site}_S2_{YYYYMMDD}.tif`` in the band contract
+      (see correction_convert.py); a failed conversion is reported in ``conversion_error``;
+    * when a tool fails, ``method`` is ``'gee_sr_fallback'`` and the caller should use
+      ``src.acquisition.gee.fetch_scenes`` surface reflectance instead.
     """
+    from src.preprocessing.correction_convert import ConversionError, acolite_to_contract, date_from_safe
+
     tiers = {"acolite": [run_acolite], "c2rcc": [run_c2rcc],
              "auto": [run_acolite] if site.type == "river" else [run_acolite, run_c2rcc]}[method]
     outputs = []
@@ -82,5 +131,13 @@ def correct_scene(safe_path: Path | str, site: Site, method: str = "auto") -> di
             outputs.append(str(fn(safe_path, site)))
     except CorrectionError as e:
         log.warning("correction failed for %s (%s); falling back to GEE surface reflectance", site.name, e)
-        return {"method": "gee_sr_fallback", "outputs": outputs, "error": str(e)}
-    return {"method": "+".join(f.__name__.removeprefix("run_") for f in tiers), "outputs": outputs}
+        return {"method": "gee_sr_fallback", "correction_method": "gee_sr_fallback", "outputs": outputs, "error": str(e)}
+    name = "+".join(f.__name__.removeprefix("run_") for f in tiers)
+    result = {"method": name, "correction_method": name, "outputs": outputs}
+    if run_acolite in tiers:
+        try:
+            dest = INTERIM / f"{site.name}_S2_{date_from_safe(safe_path)}.tif"
+            result["contract_tif"] = str(acolite_to_contract(outputs[0], dest))
+        except ConversionError as e:
+            result["conversion_error"] = str(e)
+    return result

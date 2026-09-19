@@ -1,309 +1,277 @@
 """
-CPCB Weighted-Arithmetic Water Quality Index (WQI) Engine
-Aqua-Sense — Marutey (P2)
+Water-quality index engine.
 
-Implements the CPCB weighted-arithmetic WQI as defined in:
-  Central Pollution Control Board, "Guidelines for Water Quality Monitoring"
-  CPCB/NWM/Water Quality/2008
+Two independent outputs, deliberately kept separate:
 
-Formula:
-    WQI = Σ(Wi * Qi) / Σ(Wi)
+1. ``wqi``  - a *satellite-adapted weighted-arithmetic pollution index*, bounded 0-100
+   (0 = pristine, 100 = worst). Aqua-Sense's own convention, NOT an official CPCB
+   product.  Formula (Brown-type weighted arithmetic mean):
 
-Where:
-    Wi = weight of parameter i (based on relative importance)
-    Qi = quality rating of parameter i
+       Qi  = 100 * (Vi - V0) / (Si - V0)      clipped to [0, 100]
+             (pH:  Qi = 100 * |Vi - 7| / (Si - 7))
+       Wi  = K / Si,   K = 1 / sum(1/Si)      (weights renormalised over the
+                                                parameters actually available)
+       WQI = sum(Wi * Qi)
 
-Quality rating:
-    Qi = 100 * (Vi - Vs) / (Si - Vs)
+   Only parameters that are present (not NaN) contribute; nothing is imputed.
+   Deviation from the textbook formula: the ideal DO value V0 is the saturation
+   concentration at the measured water temperature (default 25 C) instead of
+   14.6 mg/L (saturation at 0 C), which no Indian surface water can reach.
+   Chlorophyll-a is not a CPCB parameter; it is included only as an eutrophication
+   indicator with a reference value of 10 ug/L.
 
-Where:
-    Vi = measured value of parameter i
-    Vs = ideal value (pure water standard)
-    Si = permissible limit (IS 10500 / CPCB Class C standard)
-
-CPCB Water Quality Classes:
-    A : Drinking (with treatment)  — WQI > 90  (Excellent)
-    B : Outdoor bathing            — WQI 70-90  (Good)
-    C : Drinking (with purification) — WQI 50-70 (Medium)
-    D : Propagation of wildlife    — WQI 25-50  (Bad)
-    E : Irrigation only            — WQI < 25   (Very Bad / Unsuitable)
+2. ``cpcb_class`` - the CPCB *designated-best-use* class A-E, obtained from the
+   concentration criteria published by CPCB
+   (https://cpcb.gov.in/water-quality-criteria/), not from the WQI score.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
+
 import numpy as np
 import pandas as pd
 
+from src.wqi.water_chemistry import DEFAULT_TEMP_C, do_saturation_mg_l, free_ammonia_n
+
 
 # ---------------------------------------------------------------------------
-# WQI Parameter Table (CPCB / IS 10500 standards)
+# WQI parameter table
 # ---------------------------------------------------------------------------
 
-@dataclass
+@dataclass(frozen=True)
 class WQIParameter:
     name: str
     unit: str
-    ideal_value: float    # Vs — value for pure water
-    permissible: float    # Si — CPCB permissible limit
-    weight: float         # Wi — assigned weight (higher = more important)
-    higher_is_worse: bool = True  # True for pollutants, False for DO
+    ideal: float          # V0
+    standard: float       # Si
+    basis: str            # where Si comes from
+    two_sided: bool = False   # True for pH: deviation from ideal in either direction
 
 
-PARAMETERS = {
-    "do": WQIParameter(
-        name="Dissolved Oxygen",
-        unit="mg/L",
-        ideal_value=14.6,   # pure water DO at 0°C
-        permissible=5.0,    # CPCB minimum acceptable DO
-        weight=4.0,
-        higher_is_worse=False,  # MORE DO is BETTER
-    ),
-    "bod": WQIParameter(
-        name="BOD",
-        unit="mg/L",
-        ideal_value=0.0,
-        permissible=3.0,    # CPCB Class C limit
-        weight=3.0,
-        higher_is_worse=True,
-    ),
-    "turbidity": WQIParameter(
-        name="Turbidity",
-        unit="FNU",
-        ideal_value=0.0,
-        permissible=10.0,   # IS 10500 drinking limit; relaxed for Class C
-        weight=2.0,
-        higher_is_worse=True,
-    ),
-    "chl_a": WQIParameter(
-        name="Chlorophyll-a",
-        unit="µg/L",
-        ideal_value=0.0,
-        permissible=10.0,   # CPCB eutrophication alert threshold
-        weight=2.0,
-        higher_is_worse=True,
-    ),
-    "ph": WQIParameter(
-        name="pH",
-        unit="-",
-        ideal_value=7.0,
-        permissible=8.5,    # IS 10500; deviation from 7 is the measure
-        weight=2.0,
-        higher_is_worse=True,   # distance from 7 is worse
-    ),
+PARAMETERS: dict[str, WQIParameter] = {
+    "do":  WQIParameter("Dissolved Oxygen", "mg/L", DEFAULT_TEMP_C, 5.0,
+                        "CPCB Class B minimum (ideal = saturation at water temperature)"),
+    "bod": WQIParameter("BOD (3 day, 27 C / 5 day, 20 C)", "mg/L", 0.0, 3.0,
+                        "CPCB Class B/C maximum"),
+    "ph":  WQIParameter("pH", "-", 7.0, 8.5, "CPCB Class A/B upper limit", two_sided=True),
+    "turbidity": WQIParameter("Turbidity", "NTU", 0.0, 5.0,
+                              "IS 10500 permissible limit (verify against current BIS text)"),
+    "chl_a": WQIParameter("Chlorophyll-a", "ug/L", 0.0, 10.0,
+                          "eutrophication reference value, not a CPCB standard"),
+    "total_coliform": WQIParameter("Total coliform", "MPN/100 mL", 0.0, 500.0,
+                                   "CPCB Class B maximum"),
+    "conductivity": WQIParameter("Electrical conductivity", "uS/cm", 0.0, 2250.0,
+                                 "CPCB Class E maximum"),
 }
 
-# Normalised weights (sum to 1)
-_TOTAL_WEIGHT = sum(p.weight for p in PARAMETERS.values())
-NORM_WEIGHTS = {k: v.weight / _TOTAL_WEIGHT for k, v in PARAMETERS.items()}
+_TEMP_COLUMNS = ("temp_c", "temperature", "temp_surface")
 
 
 # ---------------------------------------------------------------------------
-# Quality rating per parameter
+# WQI tiers (single definition used by the whole repo)
 # ---------------------------------------------------------------------------
 
-def _quality_rating(value: float, param: WQIParameter) -> float:
-    """
-    Qi = 100 * (Vi - Vs) / (Si - Vs)   for pollutants (UNCAPPED — extreme values produce Qi > 100)
-    For DO (higher is better):
-        Qi = 100 * (Vs - Vi) / (Vs - Si)   — low DO → high Qi penalty
-    For pH:
-        Qi = 100 * |Vi - 7| / |Si - 7|
-    Qi is NOT clamped so that severely polluted water bodies (e.g. Buddha Nullah)
-    can produce WQI > 100 and land in Class E.
-    """
-    if param.name == "pH":
-        ideal_diff = abs(param.permissible - param.ideal_value)
-        if ideal_diff == 0:
-            return 0.0
-        qi = 100.0 * abs(value - param.ideal_value) / ideal_diff
-    elif not param.higher_is_worse:
-        # DO: low measured value → high penalty
-        # At DO == ideal_value → Qi = 0 (perfect); at DO == permissible → Qi = 100
-        ideal_diff = param.ideal_value - param.permissible
-        if ideal_diff == 0:
-            return 0.0
-        qi = 100.0 * (param.ideal_value - value) / ideal_diff
-    else:
-        ideal_diff = abs(param.permissible - param.ideal_value)
-        if ideal_diff == 0:
-            return 0.0
-        qi = 100.0 * (value - param.ideal_value) / ideal_diff
-
-    # Clamp at 0 from below (negative = cleaner than ideal, treat as 0)
-    return float(max(qi, 0.0))
+@dataclass(frozen=True)
+class WQITier:
+    label: str
+    lower: float
+    upper: float      # exclusive, except the last tier which includes 100
+    color: str
 
 
-# ---------------------------------------------------------------------------
-# WQI class assignment
-# ---------------------------------------------------------------------------
-
-CPCB_CLASSES = [
-    (90, "A", "Excellent — suitable for drinking with conventional treatment"),
-    (70, "B", "Good — suitable for outdoor bathing"),
-    (50, "C", "Medium — drinking with extensive purification"),
-    (25, "D", "Bad — suitable for propagation of wildlife / fisheries"),
-    (0,  "E", "Very Bad — suitable for irrigation only"),
+WQI_TIERS: list[WQITier] = [
+    WQITier("Excellent", 0.0, 20.0, "#2166ac"),
+    WQITier("Good", 20.0, 40.0, "#4dac26"),
+    WQITier("Moderate", 40.0, 60.0, "#f7c000"),
+    WQITier("Poor", 60.0, 80.0, "#f46d43"),
+    WQITier("Very Poor", 80.0, 100.0, "#d73027"),
 ]
 
 
-def wqi_class(wqi_score: float) -> tuple[str, str]:
-    """
-    Returns (class_letter, description) for a given WQI score.
-    WQI is on an inverted scale here: higher WQI → worse quality.
+def wqi_tier(score: float) -> Optional[WQITier]:
+    """Tier for a 0-100 score; None for NaN."""
+    if score is None or not np.isfinite(score):
+        return None
+    for tier in WQI_TIERS[:-1]:
+        if score < tier.upper:
+            return tier
+    return WQI_TIERS[-1]
 
-    CPCB convention used in this engine:
-        < 25    → A (Excellent)
-        25-50   → B (Good)
-        50-75   → C (Medium)
-        75-100  → D (Bad)
-        > 100   → E (Very Bad)
 
-    Note: Some CPCB documents use the direct score; others use 100 - score.
-    We use the pollution-index convention (0 = pure, 100+ = heavily polluted).
-    """
-    if wqi_score < 25:
-        return ("A", "Excellent — suitable for drinking with conventional treatment")
-    elif wqi_score < 50:
-        return ("B", "Good — suitable for outdoor bathing")
-    elif wqi_score < 75:
-        return ("C", "Medium — drinking with extensive purification")
-    elif wqi_score <= 100:
-        return ("D", "Bad — suitable for propagation of wildlife / fisheries")
+def wqi_tier_label(score: float) -> Optional[str]:
+    tier = wqi_tier(score)
+    return tier.label if tier else None
+
+
+# ---------------------------------------------------------------------------
+# Quality rating and index
+# ---------------------------------------------------------------------------
+
+def _quality_rating(key: str, values: np.ndarray, temp_c: np.ndarray) -> np.ndarray:
+    """Vectorised Qi in [0, 100]; NaN where the value is NaN."""
+    p = PARAMETERS[key]
+    v = np.asarray(values, dtype=float)
+    if p.two_sided:
+        qi = 100.0 * np.abs(v - p.ideal) / (p.standard - p.ideal)
+    elif key == "do":
+        ideal = do_saturation_mg_l(temp_c)
+        qi = 100.0 * (v - ideal) / (p.standard - ideal)
     else:
-        return ("E", "Very Bad — suitable for irrigation only / hazardous")
+        qi = 100.0 * (v - p.ideal) / (p.standard - p.ideal)
+    return np.clip(qi, 0.0, 100.0)
 
 
-# ---------------------------------------------------------------------------
-# Core WQI computation
-# ---------------------------------------------------------------------------
+def _unit_weights(keys: list[str]) -> dict[str, float]:
+    inv = {k: 1.0 / PARAMETERS[k].standard for k in keys}
+    total = sum(inv.values())
+    return {k: v / total for k, v in inv.items()}
 
-def compute_wqi(
-    do: float,
-    bod: float,
-    turbidity: float,
-    chl_a: float,
-    ph: float = 7.5,
-) -> dict:
+
+def compute_wqi_dataframe(df: pd.DataFrame, min_params: int = 2) -> pd.DataFrame:
+    """Vectorised WQI over a frame. Uses whichever WQI parameters are present.
+
+    Adds ``wqi`` (0-100, NaN if fewer than ``min_params`` parameters are available),
+    ``wqi_tier``, ``n_wqi_params`` and one ``qi_<param>`` column per parameter
+    (NaN where the parameter is missing for that row).
     """
-    Compute CPCB weighted-arithmetic WQI from predicted water quality parameters.
+    out = df.copy()
+    n = len(out)
+    temp = np.full(n, DEFAULT_TEMP_C)
+    for col in _TEMP_COLUMNS:
+        if col in out.columns:
+            t = pd.to_numeric(out[col], errors="coerce").to_numpy(dtype=float)
+            temp = np.where(np.isfinite(t), t, temp)
+            break
 
-    Args:
-        do        : Dissolved Oxygen [mg/L]
-        bod       : Biochemical Oxygen Demand [mg/L]
-        turbidity : Turbidity [FNU]
-        chl_a     : Chlorophyll-a [µg/L]
-        ph        : pH (default 7.5 if not measured)
+    present = [k for k in PARAMETERS if k in out.columns]
+    qi = {k: _quality_rating(k, pd.to_numeric(out[k], errors="coerce").to_numpy(dtype=float), temp)
+          for k in present}
 
-    Returns:
-        dict with keys:
-            wqi        : float, WQI score (0-100+, lower is better)
-            wqi_class  : str, CPCB class "A"–"E"
-            description: str, human-readable class description
-            sub_index  : dict, per-parameter Qi contributions
-            weights    : dict, normalised weights used
-    """
-    values = {
-        "do":        do,
-        "bod":       bod,
-        "turbidity": turbidity,
-        "chl_a":     chl_a,
-        "ph":        ph,
-    }
+    inv_w = np.array([1.0 / PARAMETERS[k].standard for k in present]) if present else np.array([])
+    q_mat = np.column_stack([qi[k] for k in present]) if present else np.empty((n, 0))
+    avail = np.isfinite(q_mat)
+    w_mat = np.where(avail, inv_w[None, :], 0.0)
+    w_sum = w_mat.sum(axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        score = np.where(w_sum > 0, (w_mat * np.where(avail, q_mat, 0.0)).sum(axis=1) / w_sum, np.nan)
+    n_params = avail.sum(axis=1)
+    score = np.where(n_params >= min_params, score, np.nan)
 
-    sub_index = {}
-    weighted_sum = 0.0
+    out["wqi"] = score
+    out["n_wqi_params"] = n_params
+    out["wqi_tier"] = [wqi_tier_label(s) for s in score]
+    for k in PARAMETERS:
+        out[f"qi_{k}"] = qi[k] if k in qi else np.nan
+    return out
 
-    for key, param in PARAMETERS.items():
-        qi = _quality_rating(values[key], param)
-        wi = NORM_WEIGHTS[key]
-        sub_index[key] = round(qi, 2)
-        weighted_sum += wi * qi
 
-    wqi_score = round(weighted_sum, 2)
-    cls, desc = wqi_class(wqi_score)
-
+def compute_wqi(*, do=None, bod=None, ph=None, turbidity=None, chl_a=None,
+                total_coliform=None, conductivity=None, temp_c=None, min_params: int = 2) -> dict:
+    """WQI for one sample. Pass only the parameters you actually have."""
+    row = {"do": do, "bod": bod, "ph": ph, "turbidity": turbidity, "chl_a": chl_a,
+           "total_coliform": total_coliform, "conductivity": conductivity}
+    row = {k: (np.nan if v is None else float(v)) for k, v in row.items()}
+    if temp_c is not None:
+        row["temp_c"] = float(temp_c)
+    res = compute_wqi_dataframe(pd.DataFrame([row]), min_params=min_params).iloc[0]
+    used = [k for k in PARAMETERS if np.isfinite(res[f"qi_{k}"])]
+    tier = wqi_tier(res["wqi"])
     return {
-        "wqi":         wqi_score,
-        "wqi_class":   cls,
-        "description": desc,
-        "sub_index":   sub_index,
-        "weights":     NORM_WEIGHTS,
+        "wqi": float(res["wqi"]),
+        "wqi_tier": tier.label if tier else None,
+        "n_params": int(res["n_wqi_params"]),
+        "sub_index": {k: float(res[f"qi_{k}"]) for k in used},
+        "weights": _unit_weights(used) if used else {},
     }
 
 
 # ---------------------------------------------------------------------------
-# Batch computation over DataFrame
+# CPCB designated-best-use class (A-E) from concentration criteria
 # ---------------------------------------------------------------------------
+# Source: CPCB "Water Quality Criteria" (designated best use), https://cpcb.gov.in/water-quality-criteria/
+# ("min" = value must be >= limit, "max" = <= limit, "range" = within [lo, hi])
 
-def compute_wqi_dataframe(df: pd.DataFrame, ph_default: float = 7.5) -> pd.DataFrame:
+CPCB_CLASSES: list[tuple[str, str, dict]] = [
+    ("A", "Drinking water source without conventional treatment but after disinfection",
+     {"total_coliform": ("max", 50), "ph": ("range", 6.5, 8.5), "do": ("min", 6.0), "bod": ("max", 2.0)}),
+    ("B", "Outdoor bathing (organised)",
+     {"total_coliform": ("max", 500), "ph": ("range", 6.5, 8.5), "do": ("min", 5.0), "bod": ("max", 3.0)}),
+    ("C", "Drinking water source after conventional treatment and disinfection",
+     {"total_coliform": ("max", 5000), "ph": ("range", 6.0, 9.0), "do": ("min", 4.0), "bod": ("max", 3.0)}),
+    ("D", "Propagation of wildlife and fisheries",
+     {"ph": ("range", 6.5, 8.5), "do": ("min", 4.0), "free_ammonia": ("max", 1.2)}),
+    ("E", "Irrigation, industrial cooling, controlled waste disposal",
+     {"ph": ("range", 6.0, 8.5), "conductivity": ("max", 2250.0), "sar": ("max", 26.0), "boron": ("max", 2.0)}),
+]
+
+CPCB_CLASS_DESCRIPTIONS = {c: d for c, d, _ in CPCB_CLASSES}
+CPCB_BELOW_E = "Below E"
+
+
+def _criterion_pass(kind: tuple, values: np.ndarray) -> np.ndarray:
+    if kind[0] == "min":
+        return values >= kind[1]
+    if kind[0] == "max":
+        return values <= kind[1]
+    return (values >= kind[1]) & (values <= kind[2])
+
+
+def classify_cpcb_best_use(df: pd.DataFrame, min_criteria: int = 2) -> pd.DataFrame:
+    """Add ``cpcb_class`` (A-E / 'Below E' / None), ``cpcb_criteria_assessed`` and
+    ``cpcb_class_complete`` (True when every criterion of the assigned class was measured).
+
+    A sample gets the best class (A first) for which every *available* criterion is met and
+    at least ``min_criteria`` criteria could be evaluated.  ``free_ammonia`` is derived from
+    ``ammonia_n``/``ph``/temperature when only total ammonia-N is present.
     """
-    Vectorised WQI computation over a DataFrame.
+    out = df.copy()
+    n = len(out)
 
-    Required columns: do, bod, turbidity, chl_a
-    Optional column : ph
+    def col(name: str) -> np.ndarray:
+        if name in out.columns:
+            return pd.to_numeric(out[name], errors="coerce").to_numpy(dtype=float)
+        return np.full(n, np.nan)
 
-    Adds columns: wqi, wqi_class, wqi_description, plus Qi sub-index columns.
+    values = {k: col(k) for k in ("total_coliform", "ph", "do", "bod", "conductivity", "sar", "boron")}
+    if "free_ammonia" in out.columns:
+        values["free_ammonia"] = col("free_ammonia")
+    else:
+        temp = np.full(n, DEFAULT_TEMP_C)
+        for tcol in _TEMP_COLUMNS:
+            if tcol in out.columns:
+                t = pd.to_numeric(out[tcol], errors="coerce").to_numpy(dtype=float)
+                temp = np.where(np.isfinite(t), t, temp)
+                break
+        values["free_ammonia"] = free_ammonia_n(col("ammonia_n"), values["ph"], temp)
 
-    Args:
-        df         : DataFrame with predicted parameters
-        ph_default : Default pH if column not present
+    cls = np.full(n, None, dtype=object)
+    assessed_out = np.zeros(n, dtype=int)
+    complete_out = np.zeros(n, dtype=bool)
+    unassigned = np.ones(n, dtype=bool)
+    best_any_assessed = np.zeros(n, dtype=int)
 
-    Returns:
-        df with WQI columns appended
-    """
-    df = df.copy()
+    for letter, _desc, criteria in CPCB_CLASSES:
+        ok = np.ones(n, dtype=bool)
+        assessed = np.zeros(n, dtype=int)
+        for key, kind in criteria.items():
+            v = values[key]
+            have = np.isfinite(v)
+            assessed += have
+            ok &= np.where(have, _criterion_pass(kind, v), True)
+        best_any_assessed = np.maximum(best_any_assessed, assessed)
+        hit = unassigned & ok & (assessed >= min_criteria)
+        cls[hit] = letter
+        assessed_out[hit] = assessed[hit]
+        complete_out[hit] = assessed[hit] == len(criteria)
+        unassigned &= ~hit
 
-    if "ph" not in df.columns:
-        df["ph"] = ph_default
+    below = unassigned & (best_any_assessed >= min_criteria)
+    cls[below] = CPCB_BELOW_E
+    assessed_out[below] = best_any_assessed[below]
 
-    required = ["do", "bod", "turbidity", "chl_a", "ph"]
-    for col in required:
-        if col not in df.columns:
-            raise ValueError(f"Missing required column: '{col}'")
-
-    results = df.apply(
-        lambda row: compute_wqi(
-            do=row["do"],
-            bod=row["bod"],
-            turbidity=row["turbidity"],
-            chl_a=row["chl_a"],
-            ph=row["ph"],
-        ),
-        axis=1,
-    )
-
-    df["wqi"]             = results.apply(lambda r: r["wqi"])
-    df["wqi_class"]       = results.apply(lambda r: r["wqi_class"])
-    df["wqi_description"] = results.apply(lambda r: r["description"])
-
-    # Sub-index columns for dashboard breakdown
-    for param_key in PARAMETERS:
-        df[f"qi_{param_key}"] = results.apply(lambda r: r["sub_index"][param_key])
-
-    return df
-
-
-# ---------------------------------------------------------------------------
-# CLI / quick test
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    # Hand-computed test cases
-    test_cases = [
-        # (do, bod, turbidity, chl_a, label)
-        (8.0,  1.5,  2.0,   4.0,  "Clean river — expect A/B"),
-        (5.5,  3.0,  12.0,  15.0, "Moderate pollution — expect B/C"),
-        (3.0,  8.0,  45.0,  60.0, "Eutrophic lake — expect C/D"),
-        (1.2, 25.0, 200.0, 110.0, "Buddha Nullah equivalent — expect E"),
-        (0.5, 80.0, 450.0, 150.0, "Severely polluted — expect E"),
-    ]
-
-    print("=" * 65)
-    print(f"{'Case':<35} {'WQI':>6} {'Class':>6}")
-    print("=" * 65)
-    for do, bod, turb, chl, label in test_cases:
-        result = compute_wqi(do=do, bod=bod, turbidity=turb, chl_a=chl)
-        print(f"{label:<35} {result['wqi']:>6.1f} {result['wqi_class']:>6}")
-    print("=" * 65)
+    out["cpcb_class"] = cls
+    out["cpcb_criteria_assessed"] = assessed_out
+    out["cpcb_class_complete"] = complete_out
+    return out

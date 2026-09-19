@@ -44,13 +44,12 @@ from src.models.metrics import MetricsReporter, spatial_cv_rmse
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 warnings.filterwarnings("ignore", category=UserWarning)
 
-# ── Feature columns (agree with Marutey's train.parquet schema) ──────────────
-FEATURE_COLS = [
-    "B2", "B3", "B4", "B5", "B8", "B11",
-    "ndci", "bdm2", "bdm3", "red_green", "nir", "temp_surface",
-]
-TARGET_COLS = ["chl_a", "turbidity", "do"]
-META_COLS   = ["site", "water_body_type", "lat", "lon", "date", "sensor"]
+# Defaults are the synthetic demo table's columns; pass feature_cols/targets explicitly for the real table
+# (src.models.schema.REAL_FEATURE_COLS / REAL_TARGET_COLS). A model's own columns are saved in config.json.
+from src.models.schema import LOG_TARGETS, META_COLS  # noqa: E402
+from src.models.schema import SYNTH_FEATURE_COLS as FEATURE_COLS, SYNTH_TARGET_COLS as TARGET_COLS  # noqa: E402
+
+DEFAULT_MODEL_DIR = Path(__file__).resolve().parents[2] / "reports" / "models"
 
 # ── Optuna search space ───────────────────────────────────────────────────────
 SEARCH_SPACE = {
@@ -85,7 +84,10 @@ class WaterQualityXGB:
         random_state: int = 42,
         feature_cols: list[str] | None = None,
         targets: list[str] | None = None,
+        log_targets: tuple[str, ...] | None = None,
     ):
+        # Heavy-tailed targets (BOD, turbidity, Chl-a) are modelled on a log1p scale; predictions are back-transformed.
+        self.log_targets = set(LOG_TARGETS if log_targets is None else log_targets)
         self.n_folds = n_folds
         self.random_state = random_state
         self.feature_cols = feature_cols or FEATURE_COLS
@@ -132,12 +134,14 @@ class WaterQualityXGB:
                 continue
             if verbose:
                 print(f"\n[XGB] Tuning for target: {target}  ({n_trials} trials)")
-            best_rmse, best_params = self._tune(df, target, n_trials)
-            # Refit on full data with best params (no early stopping without eval_set)
+            labelled = df[df[target].notna()]          # real data: each target has its own missing rows
+            if len(labelled) == 0:
+                warnings.warn(f"Target '{target}' has no labelled rows; skipping.")
+                continue
+            best_rmse, best_params = self._tune(labelled, target, n_trials)
+            # Refit on all labelled rows with best params (no early stopping without eval_set)
             model = self._build_model(best_params)
-            X = df[self.feature_cols]
-            y = df[target]
-            model.fit(X, y)
+            model.fit(labelled[self.feature_cols], self._to_model_scale(target, labelled[target].to_numpy()))
             self._models[target] = model
             self._best_params[target] = best_params
             results[target] = best_rmse
@@ -169,7 +173,7 @@ class WaterQualityXGB:
             if target not in self._models:
                 preds[target] = np.full(len(df), np.nan)
                 continue
-            raw = self._models[target].predict(df[self.feature_cols])
+            raw = self._from_model_scale(target, self._models[target].predict(df[self.feature_cols]))
             preds[target] = self._clip(raw, target)
         return pd.DataFrame(preds, index=df.index)
 
@@ -191,6 +195,10 @@ class WaterQualityXGB:
             params_path = model_dir / f"{target}_params.json"
             with open(params_path, "w") as f:
                 json.dump(self._best_params.get(target, {}), f, indent=2)
+        with open(model_dir / "config.json", "w") as f:
+            json.dump({"feature_cols": self.feature_cols, "targets": list(self._models),
+                       "log_targets": sorted(self.log_targets),
+                       "n_folds": self.n_folds, "random_state": self.random_state}, f, indent=2)
         print(f"[XGB] Models saved to {model_dir}")
 
     @classmethod
@@ -208,7 +216,15 @@ class WaterQualityXGB:
             Directory containing *_xgb.json files.
         """
         model_dir = Path(model_dir)
-        instance = cls(targets=targets, feature_cols=feature_cols)
+        config_path = model_dir / "config.json"
+        if config_path.exists():
+            config = json.loads(config_path.read_text())
+            feature_cols = feature_cols or config["feature_cols"]
+            targets = targets or config["targets"]
+            log_targets = tuple(config.get("log_targets", ()))      # models saved before this option were raw-scale
+        else:
+            log_targets = ()
+        instance = cls(targets=targets, feature_cols=feature_cols, log_targets=log_targets)
         loaded_targets = targets or TARGET_COLS
         for target in loaded_targets:
             model_path = model_dir / f"{target}_xgb.json"
@@ -253,9 +269,12 @@ class WaterQualityXGB:
             y = df[target]
             params = self._best_params[target]
             for train_idx, val_idx in splits:
+                train_idx = train_idx[y.iloc[train_idx].notna().to_numpy()]     # only labelled rows can train
+                if len(train_idx) == 0:
+                    continue
                 model = self._build_model(params)
-                model.fit(X.iloc[train_idx], y.iloc[train_idx])
-                raw = model.predict(X.iloc[val_idx])
+                model.fit(X.iloc[train_idx], self._to_model_scale(target, y.iloc[train_idx].to_numpy()))
+                raw = self._from_model_scale(target, model.predict(X.iloc[val_idx]))
                 oof[target][val_idx] = self._clip(raw, target)
         return pd.DataFrame(oof, index=df.index)
 
@@ -293,7 +312,7 @@ class WaterQualityXGB:
         skf = SpatialKFold(n_folds=self.n_folds, random_state=self.random_state)
         splits = list(skf.split(df))
         X = df[self.feature_cols]
-        y = df[target]
+        y = pd.Series(self._to_model_scale(target, df[target].to_numpy()), index=df.index)   # objective in model scale
 
         def objective(trial: optuna.Trial) -> float:
             params = {
@@ -350,13 +369,36 @@ class WaterQualityXGB:
             **params,
         )
 
+    def _to_model_scale(self, target: str, y: np.ndarray) -> np.ndarray:
+        y = np.asarray(y, dtype=float)
+        return np.log1p(np.maximum(y, 0.0)) if target in self.log_targets else y
+
+    def _from_model_scale(self, target: str, z: np.ndarray) -> np.ndarray:
+        z = np.asarray(z, dtype=float)
+        return np.maximum(np.expm1(z), 0.0) if target in self.log_targets else z
+
     @staticmethod
     def _clip(values: np.ndarray, target: str) -> np.ndarray:
         """Clip predictions to physically plausible ranges."""
         bounds = {
-            "chl_a":     (0.0,  500.0),   # µg/L
-            "turbidity": (0.0, 2000.0),   # FNU
+            "chl_a":     (0.0, 1000.0),   # µg/L
+            "turbidity": (0.0, 5000.0),   # NTU/FNU
             "do":        (0.0,   20.0),   # mg/L
+            "bod":       (0.0, 1000.0),   # mg/L
         }
         lo, hi = bounds.get(target, (0.0, 1e9))
         return np.clip(values, lo, hi)
+
+
+def predict(df: pd.DataFrame, model_dir: str | Path = DEFAULT_MODEL_DIR) -> pd.DataFrame:
+    """Module-level handoff interface: DataFrame of predictions for every saved target.
+
+    Raises FileNotFoundError when no trained model exists (never returns made-up numbers).
+    """
+    model_dir = Path(model_dir)
+    if not any(model_dir.glob("*_xgb.json")):
+        raise FileNotFoundError(
+            f"No trained XGBoost models in {model_dir}. Run `python -m scripts.train_real_models` "
+            "(real data) or `python scripts/train_models.py` (synthetic demo)."
+        )
+    return WaterQualityXGB.load(model_dir).predict(df)

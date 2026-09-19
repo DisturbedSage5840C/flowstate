@@ -1,5 +1,7 @@
 # Site configuration for Aqua-Sense
-# Each entry: name, type (lake/river/reservoir/lagoon), state, bbox [west, south, east, north]
+# Each entry: name, type (lake/river/reservoir/lagoon), state, bbox [west, south, east, north],
+# optional altitude_m (approximate surface elevation in metres; lowers DO saturation at altitude),
+# optional mndwi_threshold (otherwise taken from config/mndwi_thresholds.yaml, else 0.0).
 
 sites:
 
@@ -8,69 +10,82 @@ sites:
     type: lake
     state: Karnataka
     bbox: [77.630, 12.900, 77.700, 12.960]
+    altitude_m: 890
 
   - name: varthur
     type: lake
     state: Karnataka
     bbox: [77.720, 12.930, 77.780, 12.975]
+    altitude_m: 880
 
   - name: ulsoor
     type: lake
     state: Karnataka
     bbox: [77.615, 12.975, 77.645, 12.998]
+    altitude_m: 900
 
   # Punjab
   - name: sutlej_ludhiana
     type: river
     state: Punjab
     bbox: [75.700, 30.800, 75.900, 30.950]
+    altitude_m: 245
 
   - name: beas_amritsar
     type: river
     state: Punjab
     bbox: [75.000, 31.500, 75.300, 31.700]
+    altitude_m: 235
 
   - name: ghaggar_patiala
     type: river
     state: Punjab
     bbox: [76.200, 30.200, 76.500, 30.450]
+    altitude_m: 250
 
   - name: buddha_nullah_ludhiana
     type: river
     state: Punjab
     bbox: [75.820, 30.880, 75.900, 30.930]
+    altitude_m: 245
 
   # Delhi
   - name: yamuna_delhi
     type: river
     state: Delhi
     bbox: [77.200, 28.500, 77.320, 28.720]
+    altitude_m: 215
 
   # Uttar Pradesh
   - name: ganga_kanpur
     type: river
     state: Uttar Pradesh
     bbox: [80.200, 26.350, 80.450, 26.550]
+    altitude_m: 125
 
   - name: ganga_varanasi
     type: river
     state: Uttar Pradesh
     bbox: [82.950, 25.250, 83.100, 25.380]
+    altitude_m: 80
 
   # Telangana
   - name: hussain_sagar
     type: lake
     state: Telangana
     bbox: [78.440, 17.420, 78.480, 17.460]
+    altitude_m: 505
 
   # Jammu & Kashmir
   - name: dal_lake
     type: lake
     state: Jammu and Kashmir
     bbox: [74.820, 34.070, 74.910, 34.140]
+    altitude_m: 1583
 
   # Odisha
   - name: chilika
     type: lagoon
     state: Odisha
     bbox: [85.050, 19.650, 85.500, 20.100]
+    altitude_m: 0

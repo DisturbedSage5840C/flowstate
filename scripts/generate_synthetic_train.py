@@ -13,7 +13,8 @@ Schema (from plan Section 4, Handoff 2):
     temp_surface,
     chl_a, turbidity, do, wqi
 
-Note: Values are physically plausible but NOT real measurements.
+Note: SYNTHETIC demo data — physically plausible but NOT real measurements.
+Real in-situ training data comes from scripts/build_real_training_table.py.
 """
 
 import sys
@@ -31,7 +32,6 @@ from src.features.feature_engineering import (
     compute_2bdm,
     compute_3bdm,
     compute_red_green_ratio,
-    compute_do_surrogate,
 )
 from src.wqi.wqi_engine import compute_wqi_dataframe
 
@@ -71,7 +71,8 @@ def simulate_bands_for_site(
     Generate physically plausible Sentinel-2 surface reflectance values
     conditioned on Chl-a and turbidity ranges for a given site type.
 
-    Returns dict of band arrays (B2–B11, float32, range 0–0.3).
+    Returns dict of band arrays (B2–B11, float32, range 0–0.3) plus the latent
+    true Chl-a / turbidity used to draw them.
     """
     chl_vals  = rng.uniform(*chl_range, size=n)
     turb_vals = rng.uniform(*turb_range, size=n)
@@ -94,10 +95,13 @@ def simulate_bands_for_site(
     # NIR (B8) dominated by turbidity in water
     B8 = np.clip(0.003 + 0.006 * turb_vals / 100 + rng.normal(0, 0.001, n), 0.002, 0.25)
 
+    # Red-edge 2 (B6, 740 nm) sits slightly below B5 for productive water
+    B6 = np.clip(0.008 + 0.0006 * chl_vals + 0.0008 * turb_vals / 50 + rng.normal(0, 0.002, n), 0.005, 0.20)
+
     # SWIR (B11) — used for MNDWI; very low over water
     B11 = np.clip(0.002 + rng.normal(0, 0.001, n), 0.001, 0.05)
 
-    return {"B2": B2, "B3": B3, "B4": B4, "B5": B5, "B8": B8, "B11": B11,
+    return {"B2": B2, "B3": B3, "B4": B4, "B5": B5, "B6": B6, "B8": B8, "B11": B11,
             "_chl_true": chl_vals, "_turb_true": turb_vals}
 
 
@@ -120,37 +124,26 @@ def generate_synthetic_train(output_path: Path) -> pd.DataFrame:
 
         # Spectral indices (features) — computed only from the noisy simulated
         # bands, never from the true target values directly.
-        B3, B4, B5, B8, B11 = bands["B3"], bands["B4"], bands["B5"], bands["B8"], bands["B11"]
+        B3, B4, B5, B6, B8, B11 = (bands[k] for k in ("B3", "B4", "B5", "B6", "B8", "B11"))
         ndci      = compute_ndci(B5, B4)
         bdm2      = compute_2bdm(B5, B4)
-        bdm3      = compute_3bdm(B4, B5, B8)  # using B8 as B6 proxy
+        bdm3      = compute_3bdm(B4, B5, B6)
         red_green = compute_red_green_ratio(B4, B3)
 
-        # Targets: the independently-sampled "true" values plus their own
-        # observation noise — NOT recomputed from ndci / Nechad-turbidity.
-        # Those formulas are deterministic, invertible transforms of columns
-        # that are also FEATURE_COLS (src/models/xgboost_pipeline.py), so
-        # using them for the label would let a model reconstruct the label
-        # algebraically from its own inputs (label leakage) instead of
-        # learning a genuine band -> water-quality relationship.
+        # Targets: independently-sampled "true" values plus their own observation
+        # noise — NOT recomputed from any feature column. A label that is an exact
+        # function of its own inputs lets a model reconstruct it algebraically
+        # (label leakage) instead of learning a band -> water-quality relationship.
         chl_a = np.clip(
             bands["_chl_true"] * rng.normal(1.0, 0.10, N_PER_SITE), 0.5, None
         ).astype(np.float32)
         turbidity = np.clip(
             bands["_turb_true"] * rng.normal(1.0, 0.10, N_PER_SITE), 0.5, None
         ).astype(np.float32)
-
-        # DO surrogate (use month from first date as representative)
-        months = pd.DatetimeIndex(dates).month
-        do = np.array([
-            compute_do_surrogate(
-                np.array([chl_a[i]]),
-                np.array([turbidity[i]]),
-                month=int(months[i]),
-                t_water_c=float(temp_surface[i]),
-            )[0]
-            for i in range(N_PER_SITE)
-        ])
+        # DO is drawn from the site's documented range, independent of every feature.
+        do = np.clip(
+            rng.uniform(*do_range, size=N_PER_SITE) * rng.normal(1.0, 0.08, N_PER_SITE), 0.05, None
+        ).astype(np.float32)
 
         bod = rng.uniform(*bod_range, size=N_PER_SITE)
 
@@ -166,6 +159,7 @@ def generate_synthetic_train(output_path: Path) -> pd.DataFrame:
             "B3":              B3,
             "B4":              B4,
             "B5":              B5,
+            "B6":              B6,
             "B8":              B8,
             "B11":             B11,
             "ndci":            ndci,
@@ -186,7 +180,7 @@ def generate_synthetic_train(output_path: Path) -> pd.DataFrame:
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values(["site", "date"]).reset_index(drop=True)
 
-    # Compute WQI
+    # WQI from the parameters that exist (no pH here, so none is assumed)
     df = compute_wqi_dataframe(df)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -195,7 +189,7 @@ def generate_synthetic_train(output_path: Path) -> pd.DataFrame:
     print(f"\n✅ Synthetic train.parquet written → {output_path}")
     print(f"   Rows: {len(df):,}  |  Sites: {df['site'].nunique()}  |  Columns: {len(df.columns)}")
     print(f"\nSchema:\n{df.dtypes.to_string()}")
-    print(f"\nSample (first 3 rows):\n{df[['site','date','chl_a','turbidity','do','wqi','wqi_class']].head(3).to_string()}")
+    print(f"\nSample (first 3 rows):\n{df[['site','date','chl_a','turbidity','do','wqi','wqi_tier']].head(3).to_string()}")
 
     return df
 

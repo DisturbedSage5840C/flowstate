@@ -96,3 +96,19 @@ class TestSpatialCvRmse:
         # RMSE = sqrt((9+16)/2) = sqrt(12.5)
         expected = np.sqrt(12.5)
         assert spatial_cv_rmse(y_true, y_pred) == pytest.approx(expected)
+
+
+def test_r2_log_reported_for_heavy_tailed_targets_only():
+    import numpy as np
+    import pandas as pd
+    from src.models.metrics import MetricsReporter
+
+    rng = np.random.default_rng(0)
+    truth = np.exp(rng.normal(2, 1.5, 200))
+    df_true = pd.DataFrame({"bod": truth, "do": rng.normal(6, 1, 200), "water_body_type": "lake"})
+    df_pred = pd.DataFrame({"bod": truth * np.exp(rng.normal(0, 0.2, 200)), "do": df_true["do"] + rng.normal(0, 0.5, 200)})
+    t = MetricsReporter(targets=["bod", "do"]).report(df_true, df_pred)
+    bod = t[(t.target == "bod") & (t.water_body_type == "overall")].iloc[0]
+    do = t[(t.target == "do") & (t.water_body_type == "overall")].iloc[0]
+    assert bod["R2_log"] > 0.9
+    assert np.isnan(do["R2_log"])

@@ -167,7 +167,9 @@ class MetricsReporter:
         y_true: np.ndarray,
         y_pred: np.ndarray,
     ) -> dict:
-        return {
+        from src.models.schema import LOG_TARGETS
+
+        row = {
             "target": target,
             "water_body_type": wbt,
             "n": int(np.sum(~np.isnan(y_true))),
@@ -175,6 +177,13 @@ class MetricsReporter:
             "RMSE": _rmse(y_true, y_pred),
             "MAE": _safe_mae(y_true, y_pred),
         }
+        # Heavy-tailed targets: raw-scale R2/RMSE are dominated by a few extreme values, so also report R2 on the
+        # log1p scale (NaN for other targets).
+        if target in LOG_TARGETS:
+            row["R2_log"] = _safe_r2(np.log1p(np.maximum(y_true, 0.0)), np.log1p(np.maximum(y_pred, 0.0)))
+        else:
+            row["R2_log"] = float("nan")
+        return row
 
 
 # ---------------------------------------------------------------------------

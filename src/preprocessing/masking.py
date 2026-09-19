@@ -5,7 +5,7 @@ except ImportError:
 import numpy as np
 
 # Band maps: canonical name -> collection band
-S2_BANDS = {"B2": "B2", "B3": "B3", "B4": "B4", "B5": "B5", "B8": "B8", "B11": "B11"}
+S2_BANDS = {"B2": "B2", "B3": "B3", "B4": "B4", "B5": "B5", "B6": "B6", "B8": "B8", "B11": "B11"}
 LANDSAT_BANDS = {"B3": "SR_B3", "B4": "SR_B4", "B5": "SR_B5", "B6": "SR_B6"}
 
 # Valid-water thresholds are scene-dependent; these are only starting points.
