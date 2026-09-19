@@ -1,0 +1,49 @@
+{
+  "visits_compared": 120,
+  "gee_status_counts": {
+    "ok": 119,
+    "cloudy": 1
+  },
+  "both_ok": 119,
+  "share_ok_in_both": 0.992,
+  "same_day_diff_when_both_ok": 0.975,
+  "bands": {
+    "B2": {
+      "median_rel_diff": 0.0276,
+      "p90_rel_diff": 0.2572,
+      "pearson_r": 0.9668
+    },
+    "B3": {
+      "median_rel_diff": 0.0326,
+      "p90_rel_diff": 0.1586,
+      "pearson_r": 0.9766
+    },
+    "B4": {
+      "median_rel_diff": 0.0291,
+      "p90_rel_diff": 0.1865,
+      "pearson_r": 0.9783
+    },
+    "B5": {
+      "median_rel_diff": 0.0257,
+      "p90_rel_diff": 0.2003,
+      "pearson_r": 0.9817
+    },
+    "B6": {
+      "median_rel_diff": 0.0486,
+      "p90_rel_diff": 0.3511,
+      "pearson_r": 0.9758
+    },
+    "B8": {
+      "median_rel_diff": 0.028,
+      "p90_rel_diff": 0.2942,
+      "pearson_r": 0.9779
+    },
+    "B11": {
+      "median_rel_diff": 0.0567,
+      "p90_rel_diff": 0.221,
+      "pearson_r": 0.982
+    }
+  },
+  "n_water_px_median_ratio_gee_over_stac": 1.049,
+  "note": "Same scenes (same day_diff) only. Differences are expected from nearest-neighbour vs bilinear resampling of the 20 m bands and coverage-weighted pixel counts."
+}

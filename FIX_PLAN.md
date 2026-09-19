@@ -10,8 +10,8 @@ Ticked boxes below have evidence (code + tests, or a run recorded in `reports/`)
 | 4.6 Correction connected to the pipeline | **Partly done.** ACOLITE output -> band-contract raster converter written and unit-tested on synthetic files named as assumed; never run on real ACOLITE output (not installed). C2RCC output is not converted. Routing is still a static site-type rule (now described as such). |
 | 4.7 C2RCC command line | **Partly done.** The wrong `gpt` arguments were replaced by a documented Read -> Resample -> Subset -> c2rcc.msi -> Write graph; **untested** (SNAP not installed). |
 | 5.5 CI | **Open** (changing shared CI needs an explicit go-ahead). |
-| Earth Engine paths (2.7 thresholds, 4.5 export) | Code and unit tests are done; **never executed against Earth Engine**: the API is not enabled for project `prayashack`. Results in this repo use Sentinel-2 L2A from Planetary Computer instead. |
-| Kaggle datasets | Not downloaded: no Kaggle token was available in the environment. |
+| Earth Engine paths (2.7 thresholds, 4.5 export) | **Now verified live** (API enabled 2026-09-19): small-site export, fetch_scenes, MNDWI tuning and the station extraction all ran; two bugs were found and fixed (missing NIR cap in the raster water mask; Otsu on land-dominated histograms). Multi-tile export of large sites is still only unit-tested. |
+| Kaggle datasets | Ganga/Sangam downloaded and quality-checked (pH and conductivity unreliable; temperature used only to validate Landsat). `anbarivan` (2003-2014) predates Sentinel-2 and cannot be matched. |
 | Phase 7 | See the final acceptance section (filled in after the last full run). |
 
 Findings that change the pitch (details in `data/ground_truth/data_source_log.md`): real out-of-fold skill for DO, BOD and
@@ -126,7 +126,7 @@ These change how several items are fixed. A recommended default is given so noth
   Fix: add it as a band from a real source (e.g. ERA5-Land daily temperature in Earth Engine, or Landsat ST_B10 where available); missing → NaN, never 0.
 - [x] **4.4 Missing script: rasters → training table.** Nothing turns exported `.tif` files into `train.parquet`.
   Fix: `scripts/build_training_table.py`: read tif → per-pixel frame with lat/lon from the transform → `compute_all_features` → `spatial_temporal_join` → parquet in the agreed schema. The join's outputs are named `chl_a_gt`, `turbidity_gt`, … but the agreed schema expects `chl_a`, `turbidity`, `do`, `wqi`; fix the mapping. Vectorise the join (row-wise `apply` over every pixel × every station will not scale) and filter by date before distance.
-- [x] **4.5 Export size (unverified).** `gee.export_scene` uses `geemap.ee_export_image`. At 10 m, most river bounding boxes in [sites.yaml](config/sites.yaml) would exceed Earth Engine's direct-download size cap (estimated from bbox × bands × 4 bytes).
+- [x] **4.5 Export size (unverified).** `gee.export_scene` used `geemap.ee_export_image` (now Earth Engine's own download URL; geemap removed). At 10 m, most river bounding boxes in [sites.yaml](config/sites.yaml) would exceed Earth Engine's direct-download size cap (estimated from bbox × bands × 4 bytes).
   Fix: estimate bytes first; tile large AOIs or use `ee.batch.Export` to Drive/GCS.
 - [ ] **4.6 Atmospheric correction is not connected to anything.** `correct_scene` returns file paths; nothing converts ACOLITE/C2RCC outputs to the `{site}_{sensor}_{date}.tif` contract, so the downstream pipeline only ever sees the Earth Engine fallback. "Routing" is a static site-type rule, not the per-pixel dynamic routing the pitch describes.
   Fix: converter from ACOLITE/C2RCC outputs to the band contract (+ water mask); a `correction_method` provenance column; either implement a simple data-driven routing rule or reword the pitch as "site-type based".

@@ -59,7 +59,7 @@ prayashack/
 │   └── ground_truth/         # sourced / proxy in-situ data
 ├── notebooks/
 ├── src/
-│   ├── acquisition/          # GEE ingestion (geemap), reads config/sites.yaml
+│   ├── acquisition/          # GEE ingestion (earthengine-api), reads config/sites.yaml
 │   ├── preprocessing/        # cloud/QA masking, MNDWI, ACOLITE/C2RCC wrappers
 │   ├── features/             # NDCI, 2BDM/3BDM, turbidity, spatial-temporal join
 │   ├── models/
@@ -241,6 +241,6 @@ If a model is not clearly better by Hour 12, ship XGBoost as production and pres
 | WQI + CPCB class | done | section 9 |
 | Dashboard on real data + any-AOI map | done | `src/app/real_view.py`, `src/data/aoi.py` |
 | Dual-tier atmospheric correction (ACOLITE + C2RCC) | **not run**; wrappers + converter written, untested | `src/preprocessing/correction*.py` |
-| Earth Engine paths | code + unit tests only; never run against Earth Engine | `src/acquisition/gee.py` |
-| Kaggle datasets | not downloaded (no token) | — |
+| Earth Engine | enabled and verified live; extraction agrees with Planetary Computer (r 0.97-0.98); 8,461-row table built, not yet modelled | `src/data/gee_extract.py`, `reports/real/backend_comparison.json` |
+| Kaggle datasets | Ganga/Sangam used only to validate Landsat temperature (its pH/conductivity are unreliable) | `src/data/kaggle_sources.py` |
 | R² > 0.85 | **not achieved**; out-of-fold R² is near zero | `reports/real/metrics_table.csv` |
