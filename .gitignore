@@ -30,3 +30,7 @@ Thumbs.db
 !reports/**/*.json
 !reports/**/*.png
 !reports/**/*.csv
+
+# frontend build artefacts
+frontend/node_modules/
+frontend/dist/

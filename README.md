@@ -141,6 +141,24 @@ Chl-a values in the repo are formula estimates (`chl_a_empirical`) and are not v
 context (`src/models/schema.py::FEATURE_SETS`) feed the BOD models; antecedent rainfall was fetched and validated
 (`src/data/weather.py`) but tested out of every model — it stays in the parquet as unused data.
 
+## Flow State UI (React + FastAPI)
+
+`frontend/` is the Flow State web UI (React 19, Vite, Tailwind 4, Leaflet). `src/api/` is the JSON API it reads; it serves
+the artifacts the pipeline above already produced (`train_real_large.parquet`, `screening_shortlist.csv`,
+`screening_metrics.json`), so run steps 1-5 first.
+
+```bash
+cd frontend && npm install && npm run build && cd ..   # once
+uvicorn src.api.server:app --port 8000                 # UI + API at http://localhost:8000
+# development with hot reload: uvicorn on :8000, then `npm run dev` in frontend/ -> http://localhost:5173
+```
+
+Endpoints: `/api/overview /stations /stations/{id} /compare /search /cities /priorities /recommendations /alerts /scene`
+and `POST /api/ask` (a deterministic keyword-to-filter parser, not an LLM).
+Map risk = the screening model's breach probability (high >= 50 %, moderate >= 25 %); the time slider switches to measured
+per-year WQI bands. The design's sewage-outlet / STP / drainage / land-use / forecast layers have no data source in this
+repo, so they are shown as "soon" rather than faked.
+
 ## Other commands
 
 ```bash
