@@ -1,5 +1,7 @@
-"""Cloud/QA masking, MNDWI water delineation and mask erosion (Earth Engine)."""
-import ee
+try:
+    import ee
+except ImportError:
+    ee = None
 import numpy as np
 
 # Band maps: canonical name -> collection band
