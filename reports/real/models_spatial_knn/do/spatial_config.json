@@ -1,0 +1,18 @@
+{
+  "target": "do",
+  "k": 5,
+  "feature_cols": [
+    "B2",
+    "B3",
+    "B4",
+    "B5",
+    "B6",
+    "B8",
+    "B11",
+    "ndci",
+    "bdm2",
+    "bdm3",
+    "red_green",
+    "nir"
+  ]
+}

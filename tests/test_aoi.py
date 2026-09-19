@@ -95,7 +95,7 @@ def test_fetch_returns_none_when_nothing_is_within_tolerance_or_clear():
 
 def test_predict_aoi_reports_missing_models(tmp_path):
     with pytest.raises(aoi.AOIError, match="no trained models"):
-        aoi.predict_aoi(12.9, 77.6, "2020-01-29", models_dir=tmp_path)
+        aoi.predict_aoi(12.9, 77.6, "2020-01-29", models_dir=tmp_path, spatial_models_dir=tmp_path / "spatial")
 
 
 # ---------------------------------------------------------------------------
@@ -111,10 +111,11 @@ def test_with_context_adds_urban_season_and_default_type_columns():
         assert (feats["dist_nearest_city_km"] < 5.0).all()           # Bengaluru itself: essentially 0 km away
         return pd.DataFrame({"bod": 5.0}, index=feats.index)
 
-    wrapped = aoi.with_context(base_predict, lat=12.9716, lon=77.5946, date="2020-07-15")   # Bengaluru, monsoon
+    wrapped, meta = aoi.with_context(base_predict, lat=12.9716, lon=77.5946, date="2020-07-15")   # Bengaluru, monsoon
     feats = pd.DataFrame({"ndci": [0.1, 0.2, 0.3]})
     out = wrapped(feats)
     assert (out["bod"] == 5.0).all() and len(out) == 3
+    assert meta["nearest_station_km"] is None          # no spatial_models given -> nothing to report
 
 
 def test_with_context_derives_season_from_the_scene_date():
@@ -124,7 +125,8 @@ def test_with_context_derives_season_from_the_scene_date():
         seen.update(feats.iloc[0].to_dict())
         return pd.DataFrame({"bod": 1.0}, index=feats.index)
 
-    aoi.with_context(base_predict, lat=20.0, lon=78.0, date="2020-01-15")(pd.DataFrame({"ndci": [0.1]}))
+    wrapped, _ = aoi.with_context(base_predict, lat=20.0, lon=78.0, date="2020-01-15")
+    wrapped(pd.DataFrame({"ndci": [0.1]}))
     assert seen["is_winter"] == 1 and seen["is_summer"] == 0 and seen["is_monsoon"] == 0
 
 
@@ -133,5 +135,25 @@ def test_with_context_leaves_the_original_frame_untouched():
         return pd.DataFrame({"bod": 1.0}, index=feats.index)
 
     feats = pd.DataFrame({"ndci": [0.1, 0.2]})
-    aoi.with_context(base_predict, lat=12.9, lon=77.6, date="2020-01-29")(feats)
+    wrapped, _ = aoi.with_context(base_predict, lat=12.9, lon=77.6, date="2020-01-29")
+    wrapped(feats)
     assert list(feats.columns) == ["ndci"]            # the caller's frame was not mutated in place
+
+
+def test_with_context_reports_nearest_station_km_when_spatial_models_given():
+    class FakeSpatialModel:
+        def __init__(self, km):
+            self._km = km
+
+        def nearest_known_station_km(self, lat, lon):
+            return self._km
+
+    def base_predict(feats):
+        assert "lat" in feats.columns and "lon" in feats.columns   # needed by a real SpatialKNNRegressor
+        return pd.DataFrame({"bod": 1.0}, index=feats.index)
+
+    spatial_models = {"bod": FakeSpatialModel(12.3), "do": FakeSpatialModel(4.5)}
+    wrapped, meta = aoi.with_context(base_predict, lat=12.9, lon=77.6, date="2020-01-29",
+                                     spatial_models=spatial_models)
+    wrapped(pd.DataFrame({"ndci": [0.1]}))
+    assert meta["nearest_station_km"] == pytest.approx(4.5)     # the minimum across served targets

@@ -41,6 +41,19 @@ SEASONS = ("winter", "summer", "monsoon")
 RAINFALL_COLS = ["rain_3d_mm", "rain_7d_mm", "rain_14d_mm", "rain_30d_mm"]
 URBAN_PROXY_COLS = ["dist_nearest_city_km", "urban_load_index"]
 
+# Soil composition (src.data.soil) and land-use fractions (src.data.land_cover): candidate context
+# features for the same reason urban proximity is -- real, physically plausible non-satellite drivers of
+# runoff/nutrient loading. UNLIKE RAINFALL_COLS, these have NOT been fetched or ablated at all: this
+# sandbox has no network route to ISRIC SoilGrids or the Planetary Computer WorldCover collection
+# (confirmed via direct connectivity tests). The fetch/feature code is written and unit-tested against
+# mocked responses (tests/test_soil.py, tests/test_land_cover.py); someone with real network access needs
+# to run scripts.backfill_soil_land_cover, then ablate exactly like rainfall was (clean, identical-row,
+# identical-fold comparisons) before adding any of these to FEATURE_SETS. Do not add them on the
+# assumption they'll help -- rainfall looked just as plausible and did not.
+SOIL_COLS = ["soil_organic_carbon_pct", "soil_clay_pct", "soil_ph", "soil_bulk_density_gcm3"]
+LAND_COVER_COLS = ["landcover_cropland_pct", "landcover_built_pct", "landcover_tree_pct"]
+SOIL_LAND_COVER_COLS = SOIL_COLS + LAND_COVER_COLS
+
 SPECTRAL_COLS = ["B2", "B3", "B4", "B5", "B6", "B8", "B11", "ndci", "bdm2", "bdm3", "red_green", "nir"]
 TYPE_COLS = ["is_river", "is_lake", "is_reservoir"]
 SEASON_COLS = ["is_winter", "is_summer", "is_monsoon"]

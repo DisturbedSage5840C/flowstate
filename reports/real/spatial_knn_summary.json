@@ -1,0 +1,155 @@
+{
+  "table": "train_real_large.parquet",
+  "folds": 20,
+  "trials": 5,
+  "k": 5,
+  "targets": {
+    "do": {
+      "n": 8151,
+      "n_stations": 2012,
+      "knn_alone": {
+        "n": 8151,
+        "R2": 0.38528045409561196,
+        "spearman": 0.6476743637695704,
+        "R2_log": NaN
+      },
+      "knn_plus_xgboost": {
+        "n": 8151,
+        "R2": 0.40079063520918157,
+        "spearman": 0.6444678365218413,
+        "R2_log": NaN
+      },
+      "distance_decile_spearman": [
+        {
+          "km_range": "0-5",
+          "n": 4438,
+          "spearman": 0.6799594613369432
+        },
+        {
+          "km_range": "5-15",
+          "n": 2101,
+          "spearman": 0.6080763200745531
+        },
+        {
+          "km_range": "15-50",
+          "n": 1462,
+          "spearman": 0.5740464093475224
+        },
+        {
+          "km_range": "50-200",
+          "n": 150,
+          "spearman": 0.6984314733435023
+        },
+        {
+          "km_range": "200-inf",
+          "n": 0,
+          "spearman": null
+        }
+      ],
+      "sensitivity_excluding_duplicate_coordinate_stations": {
+        "n": 7844,
+        "R2": 0.41093184504945923,
+        "spearman": 0.6468434055663507,
+        "R2_log": NaN
+      }
+    },
+    "bod": {
+      "n": 6833,
+      "n_stations": 1956,
+      "knn_alone": {
+        "n": 6833,
+        "R2": -0.03673788528019273,
+        "spearman": 0.6515488835782897,
+        "R2_log": 0.23415683804929033
+      },
+      "knn_plus_xgboost": {
+        "n": 6833,
+        "R2": 0.08393727613657731,
+        "spearman": 0.6688458534331055,
+        "R2_log": 0.45958305456196924
+      },
+      "distance_decile_spearman": [
+        {
+          "km_range": "0-5",
+          "n": 3677,
+          "spearman": 0.7037281714504686
+        },
+        {
+          "km_range": "5-15",
+          "n": 1705,
+          "spearman": 0.6430412992171093
+        },
+        {
+          "km_range": "15-50",
+          "n": 1290,
+          "spearman": 0.4784126766516769
+        },
+        {
+          "km_range": "50-200",
+          "n": 161,
+          "spearman": 0.4243524291038389
+        },
+        {
+          "km_range": "200-inf",
+          "n": 0,
+          "spearman": null
+        }
+      ],
+      "sensitivity_excluding_duplicate_coordinate_stations": {
+        "n": 6553,
+        "R2": 0.08838721460468313,
+        "spearman": 0.6702045321644718,
+        "R2_log": 0.46964959019011854
+      }
+    },
+    "turbidity": {
+      "n": 3223,
+      "n_stations": 1450,
+      "knn_alone": {
+        "n": 3223,
+        "R2": 0.02792109508310958,
+        "spearman": 0.6128928221201966,
+        "R2_log": 0.31843760020358136
+      },
+      "knn_plus_xgboost": {
+        "n": 3223,
+        "R2": 0.10907089530684899,
+        "spearman": 0.6483046730427677,
+        "R2_log": 0.43833516545779394
+      },
+      "distance_decile_spearman": [
+        {
+          "km_range": "0-5",
+          "n": 1623,
+          "spearman": 0.6817562947016145
+        },
+        {
+          "km_range": "5-15",
+          "n": 792,
+          "spearman": 0.5545163563792168
+        },
+        {
+          "km_range": "15-50",
+          "n": 715,
+          "spearman": 0.5725683175913463
+        },
+        {
+          "km_range": "50-200",
+          "n": 93,
+          "spearman": 0.47806079702108006
+        },
+        {
+          "km_range": "200-inf",
+          "n": 0,
+          "spearman": null
+        }
+      ],
+      "sensitivity_excluding_duplicate_coordinate_stations": {
+        "n": 3107,
+        "R2": 0.10728092505114484,
+        "spearman": 0.6504843269339745,
+        "R2_log": 0.437244600710719
+      }
+    }
+  }
+}

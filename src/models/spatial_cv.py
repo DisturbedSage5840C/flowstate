@@ -26,6 +26,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
+from sklearn.model_selection import KFold
 from sklearn.preprocessing import LabelEncoder
 from typing import Iterator
 
@@ -136,6 +137,44 @@ class SpatialKFold:
         )
         cluster_labels = kmeans.fit_predict(sites[[self.lat_col, self.lon_col]].values)
         self._fold_map = dict(zip(sites.index, cluster_labels.tolist()))
+
+
+class StationKFold:
+    """Plain shuffled K-fold over station identity -- deliberately NOT geographically blocked.
+
+    ``SpatialKFold`` clusters geographically close stations into the same fold on purpose, to test
+    "regional generalization": can a model work somewhere with zero nearby monitored stations. That is
+    the right question for the row-level regressors, and it is why their out-of-fold R^2 sits near zero
+    (85-100% of DO/BOD/turbidity's variance is between-station; see src/models/schema.py). It is the
+    WRONG question for src.models.spatial_baseline.SpatialKNNRegressor, which asks something different:
+    "given the existing ~2,000-station CPCB network stays in place, how well can I estimate an
+    unmonitored point near it" -- the real deployment scenario for densifying coverage, not extending
+    into an unmonitored region. Under that question, nearby stations SHOULD be available as neighbours
+    (median distance to the nearest other station is ~4.7 km); ``SpatialKFold``'s clustering would
+    remove exactly the signal being tested, pushing the nearest available neighbour to ~360 km on
+    median and making the technique look like it has no skill when it actually does (verified: median
+    nearest-neighbour distance under SpatialKFold's 5 clusters is ~358 km vs ~5 km under this class).
+
+    A station never straddles folds (all of its visits move together), same guarantee as SpatialKFold,
+    just without the geographic clustering step.
+    """
+
+    def __init__(self, n_folds: int = 5, random_state: int = 42, site_col: str = "site"):
+        self.n_folds = n_folds
+        self.random_state = random_state
+        self.site_col = site_col
+
+    def split(self, df: pd.DataFrame) -> Iterator[tuple[np.ndarray, np.ndarray]]:
+        sites = df[self.site_col].unique()
+        if len(sites) < self.n_folds:
+            raise ValueError(f"n_folds={self.n_folds} > n_sites={len(sites)}.")
+        kf = KFold(n_splits=self.n_folds, shuffle=True, random_state=self.random_state)
+        site_col = df[self.site_col].to_numpy()
+        for train_site_idx, val_site_idx in kf.split(sites):
+            train_sites, val_sites = set(sites[train_site_idx]), set(sites[val_site_idx])
+            train_idx = np.where(np.isin(site_col, list(train_sites)))[0]
+            val_idx = np.where(np.isin(site_col, list(val_sites)))[0]
+            yield train_idx, val_idx
 
 
 # ---------------------------------------------------------------------------

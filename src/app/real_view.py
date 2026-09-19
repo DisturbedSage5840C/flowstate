@@ -234,6 +234,34 @@ def _screening_tab(bundle: RealBundle) -> None:
               f"inspector first, not a certainty. AUC {auc_str}, lift {lift_str} the base rate.")
 
 
+def _aoi_model_caveat(res: dict) -> None:
+    """Distance-conditional caveat for whichever targets the AOI request served from the spatial-KNN
+    'densification' model (src.data.aoi.predict_aoi's ``used_model``/``nearest_station_km``) -- without
+    this, the map would look equally confident everywhere, which is exactly what this model is not."""
+    used_model = res.get("used_model")
+    if not used_model:
+        return
+    knn_targets = sorted(t for t, m in used_model.items() if m == "spatial_knn")
+    row_targets = sorted(t for t, m in used_model.items() if m == "row_level_xgboost")
+    if not knn_targets:
+        return
+    nearest = res.get("nearest_station_km")
+    if nearest is None or not np.isfinite(nearest):
+        dist_str, tier = "unknown", "unknown -- treat with caution"
+    elif nearest < 20:
+        dist_str, tier = f"{nearest:.1f} km", "close -- a genuinely informative estimate"
+    elif nearest < 100:
+        dist_str, tier = f"{nearest:.1f} km", "a moderate distance -- treat with some caution"
+    else:
+        dist_str, tier = f"{nearest:.1f} km", "far from any known station -- unreliable, closer to the row-level model's near-zero skill"
+    msg = (f"**{', '.join(t.upper() for t in knn_targets)} use the spatial-KNN 'densification' model here** "
+          f"(nearest known CPCB station: {dist_str}). Accuracy is *conditional on proximity*: {tier}. See the "
+          "Model performance tab's Densification section for the full distance-vs-skill picture.")
+    if row_targets:
+        msg += f" {', '.join(t.upper() for t in row_targets)} still use the row-level model (near-zero skill)."
+    st.info(msg, icon="📍")
+
+
 def _aoi_tab(bundle: RealBundle) -> None:
     import datetime as dt
 
@@ -244,9 +272,11 @@ def _aoi_tab(bundle: RealBundle) -> None:
         "Pick **any point on a water body in India** and a date. The app fetches the nearest clear Sentinel-2 scene "
         "(Planetary Computer, no login), masks the water, and maps the index and the trained models' output.")
     st.warning(
-        f"**Skill warning.** Out-of-fold skill of the models: {_skill_summary(bundle)}. R² near 0 means the model "
-        "cannot tell sites apart, so its maps sit near the training average. The NDCI layer is computed directly "
-        "from reflectance and is the more trustworthy layer here.", icon="⚠️")
+        f"**Skill warning (row-level model).** Out-of-fold skill: {_skill_summary(bundle)}. R² near 0 means the "
+        "model cannot tell sites apart, so its maps sit near the training average. The NDCI layer is computed "
+        "directly from reflectance and is the more trustworthy layer here. If a spatial-KNN 'densification' "
+        "model is available (see below once you fetch a scene), it replaces this for that target and its skill "
+        "depends on distance to the nearest known CPCB station instead.", icon="⚠️")
 
     c1, c2, c3, c4 = st.columns(4)
     lat = c1.number_input("Latitude", value=12.9359, format="%.4f", key="aoi_lat")
@@ -275,6 +305,7 @@ def _aoi_tab(bundle: RealBundle) -> None:
 
     st.caption(f"Scene {res['scene_id']} · {res['scene_date']} ({res['day_diff']} day(s) from the requested date) · "
                f"scene cloud {res['scene_cloud']:.1f}% · {res['n_water_px']:,} water pixels")
+    _aoi_model_caveat(res)
     layers = res["layers"]
     key = st.selectbox("Layer", list(layers), format_func=lambda k: AOI_LAYER_LABELS.get(k, k), key="aoi_layer")
     if not HAS_FOLIUM:
@@ -299,6 +330,39 @@ def _aoi_tab(bundle: RealBundle) -> None:
     st.caption(f"Colour scale: 2nd-98th percentile, {lo:.3g} to {hi:.3g}. {res['note']}")
 
 
+def _densification_section(bundle: RealBundle) -> None:
+    metrics = bundle.spatial_knn_metrics
+    if metrics is None or not len(metrics):
+        return
+    st.markdown("#### Densification (near an existing CPCB station)")
+    st.warning(
+        "**Different question, different fold structure -- not comparable to the regional numbers above.** "
+        "The regression above asks \"can this work somewhere with zero nearby CPCB coverage\" (site-blocked "
+        "spatial CV) and stays near R² 0, honestly. This section asks a different, easier question: \"given "
+        "the existing ~2,000-station CPCB network stays in place, how well can I estimate an unmonitored point "
+        "*near* it\" (station-held-out CV, with the rest of the network still available as neighbours). Skill "
+        "here is **conditional on proximity** to an already-monitored station -- see the distance breakdown "
+        "below.", icon="📍")
+    show_cols = ["target", "model", "n", "R2", "R2_log", "spearman"]
+    st.dataframe(metrics[[c for c in show_cols if c in metrics.columns]].round(3), width="stretch",
+                hide_index=True)
+
+    targets = (bundle.spatial_knn_summary or {}).get("targets", {})
+    if not targets:
+        return
+    target = st.selectbox("Distance-vs-skill breakdown", list(targets), format_func=PARAM_LABELS.get,
+                          key="rv_knn_dist_target")
+    decile = targets[target].get("distance_decile_spearman") or []
+    rows = [{"nearest known station": d["km_range"] + " km", "n": d["n"],
+            "spearman": d["spearman"]} for d in decile if d.get("spearman") is not None]
+    if rows:
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        st.caption("Rank correlation of the spatial-KNN-alone baseline, bucketed by distance to the nearest "
+                  "known station used for that prediction. Skill falls off with distance -- real spatial "
+                  "autocorrelation (CPCB densely monitors many river reaches/urban lake systems at several "
+                  "points), not an artifact, but a hard limit on how far this model's confidence should reach.")
+
+
 def _performance_tab(bundle: RealBundle) -> None:
     if bundle.metrics is None:
         st.info("Run `python -m scripts.train_real_models` to produce out-of-fold metrics.")
@@ -308,6 +372,7 @@ def _performance_tab(bundle: RealBundle) -> None:
     st.caption("DO has no demonstrated skill here in any ablation (reflectance cannot see dissolved oxygen "
               "directly) -- it is kept only to support the low-DO screening flag (Screening tab), not for its "
               "own accuracy. See the Screening tab for the models that do show real skill.")
+    _densification_section(bundle)
     if bundle.comparison is not None and len(bundle.comparison):
         st.markdown("#### Production choice per target")
         st.caption("XGBoost is the default; the DL model is chosen only when its out-of-fold RMSE is lower by more than 5%. "

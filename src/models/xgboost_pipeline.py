@@ -78,6 +78,12 @@ class WaterQualityXGB:
         columns beat reflectance alone or hurt it, and the evidence differs per target (see schema.py).
     targets : list[str]
         Target parameters to model (default: chl_a, turbidity, do).
+    sample_weight_col : str | None
+        Optional column in the training df used as a per-row XGBoost sample weight (e.g. "n_water_px":
+        rows with more water pixels in their reflectance extraction are more reliable -- the red-band-vs-
+        turbidity correlation is 0.194 under 200 water pixels vs 0.368 above 1,000, see
+        AQUA_SENSE_PROJECT_PLAN.md §11). Off by default so existing behaviour never silently changes;
+        weights only the fit, never the held-out RMSE used for model selection/scoring.
     """
 
     def __init__(
@@ -87,6 +93,7 @@ class WaterQualityXGB:
         feature_cols: list[str] | dict[str, list[str]] | None = None,
         targets: list[str] | None = None,
         log_targets: tuple[str, ...] | None = None,
+        sample_weight_col: str | None = None,
     ):
         # Heavy-tailed targets (BOD, turbidity, Chl-a) are modelled on a log1p scale; predictions are back-transformed.
         self.log_targets = set(LOG_TARGETS if log_targets is None else log_targets)
@@ -94,6 +101,7 @@ class WaterQualityXGB:
         self.random_state = random_state
         self.feature_cols = feature_cols or FEATURE_COLS
         self.targets = targets or TARGET_COLS
+        self.sample_weight_col = sample_weight_col
         self._models: dict[str, xgb.XGBRegressor] = {}
         self._best_params: dict[str, dict] = {}
 
@@ -151,7 +159,8 @@ class WaterQualityXGB:
             best_rmse, best_params = self._tune(labelled, target, n_trials)
             # Refit on all labelled rows with best params (no early stopping without eval_set)
             model = self._build_model(best_params)
-            model.fit(labelled[self._features_for(target)], self._to_model_scale(target, labelled[target].to_numpy()))
+            model.fit(labelled[self._features_for(target)], self._to_model_scale(target, labelled[target].to_numpy()),
+                      sample_weight=self._sample_weight(labelled))
             self._models[target] = model
             self._best_params[target] = best_params
             results[target] = best_rmse
@@ -278,6 +287,7 @@ class WaterQualityXGB:
         skf = SpatialKFold(n_folds=self.n_folds, random_state=self.random_state)
         splits = list(skf.split(df))
         oof = {target: np.full(len(df), np.nan) for target in self.targets}
+        w_all = self._sample_weight(df)
         for target in self.targets:
             if target not in self._best_params or target not in df.columns:
                 continue
@@ -289,7 +299,9 @@ class WaterQualityXGB:
                 if len(train_idx) == 0:
                     continue
                 model = self._build_model(params)
-                model.fit(X.iloc[train_idx], self._to_model_scale(target, y.iloc[train_idx].to_numpy()))
+                fit_weight = w_all[train_idx] if w_all is not None else None
+                model.fit(X.iloc[train_idx], self._to_model_scale(target, y.iloc[train_idx].to_numpy()),
+                         sample_weight=fit_weight)
                 raw = self._from_model_scale(target, model.predict(X.iloc[val_idx]))
                 oof[target][val_idx] = self._clip(raw, target)
         return pd.DataFrame(oof, index=df.index)
@@ -329,6 +341,7 @@ class WaterQualityXGB:
         splits = list(skf.split(df))
         X = df[self._features_for(target)]
         y = pd.Series(self._to_model_scale(target, df[target].to_numpy()), index=df.index)   # objective in model scale
+        w = self._sample_weight(df)
 
         def objective(trial: optuna.Trial) -> float:
             params = {
@@ -362,8 +375,11 @@ class WaterQualityXGB:
             model = self._build_model(params)
             fold_rmses = []
             for train_idx, val_idx in splits:
-                model.fit(X.iloc[train_idx], y.iloc[train_idx])
+                fit_weight = w[train_idx] if w is not None else None
+                model.fit(X.iloc[train_idx], y.iloc[train_idx], sample_weight=fit_weight)
                 preds = model.predict(X.iloc[val_idx])
+                # Held-out RMSE is always unweighted: sample_weight should change what the model learns
+                # to trust, never inflate the reported score by down-weighting the rows it does worst on.
                 fold_rmses.append(
                     float(np.sqrt(mean_squared_error(y.iloc[val_idx], preds)))
                 )
@@ -375,6 +391,18 @@ class WaterQualityXGB:
         )
         study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
         return study.best_value, study.best_params
+
+    def _sample_weight(self, df: pd.DataFrame) -> Optional[np.ndarray]:
+        """Per-row fit weight from self.sample_weight_col, or None (uniform) when unset/absent/all-NaN."""
+        if self.sample_weight_col is None or self.sample_weight_col not in df.columns:
+            return None
+        w = pd.to_numeric(df[self.sample_weight_col], errors="coerce").to_numpy(dtype=float)
+        if not np.isfinite(w).any():
+            return None
+        # NaN/non-positive weights (missing quality signal) fall back to the median observed weight,
+        # never zero -- a row with an unknown quality score should still be learned from, not dropped.
+        fallback = np.nanmedian(np.where(w > 0, w, np.nan))
+        return np.where(np.isfinite(w) & (w > 0), w, fallback)
 
     def _build_model(self, params: dict) -> xgb.XGBRegressor:
         return xgb.XGBRegressor(

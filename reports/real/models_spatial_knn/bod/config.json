@@ -1,0 +1,37 @@
+{
+  "feature_cols": {
+    "bod": [
+      "knn_baseline",
+      "B2",
+      "B3",
+      "B4",
+      "B5",
+      "B6",
+      "B8",
+      "B11",
+      "ndci",
+      "bdm2",
+      "bdm3",
+      "red_green",
+      "nir",
+      "is_river",
+      "is_lake",
+      "is_reservoir",
+      "is_winter",
+      "is_summer",
+      "is_monsoon",
+      "dist_nearest_city_km",
+      "urban_load_index"
+    ]
+  },
+  "targets": [
+    "bod"
+  ],
+  "log_targets": [
+    "bod",
+    "chl_a",
+    "turbidity"
+  ],
+  "n_folds": 5,
+  "random_state": 42
+}

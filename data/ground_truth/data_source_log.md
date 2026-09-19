@@ -112,6 +112,19 @@ Loaded: ~84,000 visits at ~4,000 stations in 36 states/UTs (2019-2024), of which
   `reports/real/metrics_summary.json`. The columns stay in the parquets as data (for anyone who wants to
   re-test them) but are wired into no feature set (`src/models/schema.py::FEATURE_SETS`).
 
+### ISRIC SoilGrids (soil composition) and ESA WorldCover (land use) — code written, never fetched
+- `https://rest.isric.org/soilgrids/v2.0/properties/query` (organic carbon, clay, pH, bulk density at
+  0-5cm, no key) and the `esa-worldcover` collection on the same Planetary Computer STAC catalog already
+  used for Sentinel-2 (cropland/built-up/tree-cover % within a station's buffer). Code: `src/data/soil.py`,
+  `src/data/land_cover.py`, `scripts/backfill_soil_land_cover.py`.
+- **Not run.** Direct connectivity tests from this sandbox got a policy-blocked 403 CONNECT for
+  `rest.isric.org`, `planetarycomputer.microsoft.com`, and every other external host tried (SoilGrids,
+  WorldPop, HydroSHEDS, Open-Meteo, earthdata.nasa.gov); Google Earth Engine's endpoint is reachable but no
+  service-account credentials are configured here. The fetch/parse/rate-limit logic is unit-tested against
+  mocked HTTP responses (`tests/test_soil.py`, `tests/test_land_cover.py`) but has never touched the real
+  APIs. Columns (`src/models/schema.py::SOIL_LAND_COVER_COLS`) are in no feature set — same rule as
+  rainfall: fetch, then ablate on identical rows/folds, never assume a plausible-sounding feature helps.
+
 ### Sources reviewed and NOT used
 | Source | Verdict |
 |---|---|
@@ -161,10 +174,29 @@ buffer radius is 500 m (as in the project plan). Only visits with a clear scene 
   — now the headline deliverable, with row-level regression kept as a secondary, flagged result. A learning
   curve on BOD>3 (AUC 0.743 at 25 % of stations → 0.755 at 100 %) shows extracting the remaining stations
   would not meaningfully change this.
+- **2026-09-19 evidence-driven rework, continued** (`AQUA_SENSE_PROJECT_PLAN.md` section 12): pushed further on
+  whether the oracle ceiling above (R² 0.61/0.79/0.49) is reachable in practice, not just in theory. CPCB's
+  ~2,121 stations are far denser than the 5-cluster `SpatialKFold` regime implies (median distance to the
+  nearest *other* station: ~4.7 km, vs ~358 km once `SpatialKFold`'s clustering removes nearby neighbours on
+  purpose). A distance-weighted KNN baseline over other stations' known values, evaluated with a new
+  `StationKFold` (a station held out entirely, but the rest of the network available -- the real "densify
+  existing coverage" scenario), combined with the existing satellite features: DO R² 0.019 → **0.401**, BOD
+  R²(log) 0.169 → **0.460**, turbidity R²(log) 0.042 → **0.438** (`reports/real/spatial_knn_summary.json`).
+  Conditional on proximity (BOD Spearman 0.70 at <5km → 0.42 at 50-200km) and reported as a genuinely
+  different, separately-labelled question from the site-blocked numbers above, never merged with them. Also
+  tested: weighting row-level training by `n_water_px` (reproduces the documented 0.194→0.368 correlation
+  pattern exactly) but does not clearly improve the multi-feature regressors — an honest, mixed, reported
+  result, not adopted as a default. Also written (code-complete, unit-tested, **not run**: confirmed no
+  network route to either host from this sandbox): `src/data/soil.py` (ISRIC SoilGrids) and
+  `src/data/land_cover.py` (ESA WorldCover land-use %) — present in `src/models/schema.py::SOIL_LAND_COVER_COLS`,
+  wired into no feature set, exactly the rainfall precedent (fetch, then ablate, never assume).
 
 ## 5. Disclosure text for the pitch
 > "Labels are CPCB in-situ grab-sample measurements (DO, BOD, turbidity) from the National Water Data Portal, matched
 > to Sentinel-2 L2A reflectance within ±3 days. Chlorophyll-a has no ground truth and is shown only as an index. The
 > headline result is a binary pollution screen (e.g. BOD above the CPCB Class C limit), out-of-fold AUC ~0.75 — a
-> decision an inspector can act on. Exact DO/BOD/turbidity concentrations cannot be recovered from reflectance alone
+> decision an inspector can act on. Near an already-monitored CPCB station, a spatial-KNN model raises real-number
+> regression skill substantially (BOD R²(log) up to ~0.46, DO R² up to ~0.40) — but that skill is conditional on
+> proximity to an existing station and is reported separately from the 'works anywhere' numbers, never blended.
+> Exact DO/BOD/turbidity concentrations far from any monitored station cannot be recovered from reflectance alone
 > (DO and BOD are not optically active); we report that honestly rather than oversell a per-visit number."

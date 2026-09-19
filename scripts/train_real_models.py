@@ -93,6 +93,30 @@ def turbidity_anomaly_oof(df: pd.DataFrame, folds: int, seed: int) -> dict:
     }
 
 
+def n_water_px_weighting_ablation(df: pd.DataFrame, folds: int, seed: int, n_trials: int) -> dict:
+    """Does weighting training rows by n_water_px (more water pixels -> cleaner reflectance extraction;
+    ρ(B4, turbidity) is 0.194 under 200 water pixels vs 0.368 above 1,000, see AQUA_SENSE_PROJECT_PLAN.md
+    §11) improve the row-level regressors? Weighted vs unweighted OOF, same folds, reported honestly --
+    not assumed just because the underlying correlation pattern is real."""
+    if "n_water_px" not in df.columns:
+        return {"skill": "n_water_px column not present"}
+    reporter = MetricsReporter(targets=TARGETS)
+    out = {}
+    for weighted in (False, True):
+        pipe = WaterQualityXGB(n_folds=folds, random_state=seed, feature_cols=FEATURE_SETS, targets=TARGETS,
+                               sample_weight_col="n_water_px" if weighted else None)
+        pipe.train(df, n_trials=n_trials, verbose=False)
+        oof = pipe.predict_oof(df)
+        table = reporter.report(df, oof)
+        overall = table[table.water_body_type == "overall"].set_index("target")
+        out["weighted" if weighted else "unweighted"] = {
+            t: {"R2": float(overall.loc[t, "R2"]), "R2_log": float(overall.loc[t, "R2_log"]),
+               "spearman": float(overall.loc[t, "spearman"])}
+            for t in TARGETS if t in overall.index
+        }
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--trials", type=int, default=30)
@@ -134,6 +158,8 @@ def main():
     print(f"station-level BOD ranking: {station_bod}")
     turb_anomaly = turbidity_anomaly_oof(df, args.folds, args.seed)
     print(f"turbidity anomaly (within-station): {turb_anomaly}")
+    weight_ablation = n_water_px_weighting_ablation(df, args.folds, args.seed, min(args.trials, 15))
+    print(f"n_water_px sample-weight ablation: {weight_ablation}")
 
     summary = {
         "data": f"real CPCB in-situ + Sentinel-2 L2A ({TABLE.name})",
@@ -145,6 +171,7 @@ def main():
         "metrics": metrics.to_dict(orient="records"),
         "station_level_bod_ranking": station_bod,
         "turbidity_anomaly": turb_anomaly,
+        "n_water_px_weighting_ablation": weight_ablation,
         "skill_notes": {"do": "none — DO is not optically active; kept for the low-DO screening flag "
                               "(scripts/train_screening.py), not for its own accuracy"},
     }

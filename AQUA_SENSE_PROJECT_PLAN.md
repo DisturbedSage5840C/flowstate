@@ -289,3 +289,62 @@ models work there too. **Not done, with evidence:** no further satellite extract
 no multi-scene composites (day_diff barely matters), no chlorophyll-a model (no CPCB ground truth), no
 SWIR-residual correction (mixed results, B4 got worse).
 | R² > 0.85 | **not achieved and not achievable with this signal**; out-of-fold raw R² stays near zero even after recalibration and more data — this is a genuine ceiling of single-satellite-scene optical reflectance for chemistry parameters under honest spatial CV, not a bug. Rank correlation (Spearman 0.14-0.24) and log-scale R² are the honest headline numbers and both beat naive baselines | `reports/real/metrics_table.csv` |
+
+## 12. Spatial-KNN "densification" model (2026-09-19, later): the real-number regression the data supports
+
+§11 correctly found that the row-level regressors stay near R² 0 under `SpatialKFold` (site-blocked to
+test regional generalization: "can this work with zero nearby CPCB coverage"). Pushed further, per
+request, into what would make a genuinely better real-number model rather than accepting that ceiling as
+final: a variance decomposition already showed 85-100% of each target's variance is between-station, and
+the oracle ceiling (a model that knows a station's own mean) reaches R² 0.61/0.79/0.49 for DO/BOD/
+turbidity. The question this section answers is whether any of that oracle signal is *reachable in
+practice* -- not by knowing a station's own future value, but by knowing its *neighbours'* values, since
+CPCB's ~2,121 stations are far denser than `SpatialKFold`'s 5-cluster regime implies (median distance to
+the nearest other station: ~4.7 km; `SpatialKFold`'s clustering pushes that to ~358 km on median, which is
+why it correctly sees no signal there -- it's testing a different, harder, also-real question).
+
+**Result: yes, substantially, and it survives honest evaluation.** `src/models/spatial_baseline.py`'s
+`SpatialKNNRegressor` combines a distance-weighted median of nearby *other* stations' known values with
+the existing satellite/context features. Evaluated with a new `StationKFold` (`src/models/spatial_cv.py`
+-- a station is held out entirely, but the rest of the network stays available, the real "densify
+existing coverage" deployment scenario, not "cover an unmonitored region"):
+
+| target | row-level (SpatialKFold) | KNN-alone (station-held-out) | KNN + XGBoost combo |
+|---|---|---|---|
+| do | R² 0.019 | R² 0.385, Spearman 0.648 | R² 0.401, Spearman 0.644 |
+| bod | R² 0.008, R²(log) 0.169 | R² −0.037, Spearman 0.652 | R² 0.084, **R²(log) 0.460**, Spearman 0.669 |
+| turbidity | R² −0.030, R²(log) 0.042 | R² 0.028, Spearman 0.613 | R² 0.109, R²(log) 0.438, Spearman 0.648 |
+
+(exact, regenerated numbers: `reports/real/spatial_knn_summary.json`, `reports/real/metrics_table_spatial_knn.csv`)
+
+**The catch, which is load-bearing, not a footnote**: this skill is *conditional on proximity* to an
+already-monitored station. BOD Spearman falls from 0.70 at <5km to the nearest known station, to 0.64 at
+5-15km, 0.48 at 15-50km, 0.42 at 50-200km (full breakdown per target in `spatial_knn_summary.json`). A
+sensitivity re-score excluding the 83/2,121 stations (~4%) that share a near-exact coordinate with a
+differently-named station (confirmed genuinely distinct monitoring points, not leakage) shows the result
+holds up, slightly improves if anything. This is why it is reported as a **separate, distinctly labelled**
+result (`validation: "station_shuffled_densification"` in the metrics CSV) and never merged with or
+compared directly against the §11 regional-generalization numbers (`validation: "spatial_blocked"`) --
+they honestly answer two different questions, and conflating them would overstate what either shows.
+
+Served in the any-AOI map (`src/data/aoi.py::make_predict_fn`/`with_context`) per target when a
+spatial-KNN model exists, falling back to the row-level model otherwise; the result carries
+`nearest_station_km` and `used_model` so `src/app/real_view.py` can show the confidence caveat instead of
+a uniformly-confident-looking map.
+
+**Quick win tested alongside, honest mixed result**: weighting XGBoost training rows by `n_water_px`
+(more water pixels -> cleaner reflectance extraction; ρ(B4, turbidity) is 0.194 under 200 water pixels vs
+0.368 above 1,000, reproduced exactly) is now supported (`WaterQualityXGB(sample_weight_col=...)`) but
+does **not** clearly improve the row-level regressors in this ablation (BOD R² 0.013→0.008, turbidity R²
+−0.032→−0.021, DO R² 0.017→0.011 -- mixed, mostly flat-to-slightly-worse). The underlying bivariate
+correlation pattern is real; it did not translate into a win once mixed with every other feature during a
+multi-feature fit. Reported honestly rather than adopted as a default (`n_water_px_weighting_ablation` in
+`reports/real/metrics_summary.json`).
+
+**Soil composition and land-use scaffolding, explicitly not validated**: `src/data/soil.py` (ISRIC
+SoilGrids) and `src/data/land_cover.py` (ESA WorldCover) fetch code exists, is unit-tested against mocked
+responses, and follows the exact fetch-then-ablate discipline every other feature in this project went
+through -- but this sandbox has no network route to either host (confirmed directly), so neither has been
+run, and `SOIL_LAND_COVER_COLS` is in no `FEATURE_SETS` entry. `scripts/backfill_soil_land_cover.py` is
+ready for someone with real network access to run and then ablate; do not add these columns to a feature
+set without that ablation, on the same principle rainfall was tested and dropped.

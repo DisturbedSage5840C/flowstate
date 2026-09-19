@@ -21,6 +21,15 @@ def test_rainfall_columns_are_in_no_feature_set():
     assert not set(schema.RAINFALL_COLS) & set(schema.REAL_FEATURE_COLS)
 
 
+def test_soil_and_land_cover_columns_are_in_no_feature_set():
+    """Untested-in-this-sandbox scaffolding (src.data.soil, src.data.land_cover): present as a column
+    name list, but must not be wired into any model until someone with real network access ablates it."""
+    all_feature_cols = set().union(*schema.FEATURE_SETS.values())
+    assert not set(schema.SOIL_LAND_COVER_COLS) & all_feature_cols
+    assert not set(schema.SOIL_LAND_COVER_COLS) & set(schema.REAL_FEATURE_COLS)
+    assert set(schema.SOIL_LAND_COVER_COLS) == set(schema.SOIL_COLS) | set(schema.LAND_COVER_COLS)
+
+
 def test_real_feature_cols_is_the_union_of_every_feature_set():
     union = set().union(*schema.FEATURE_SETS.values())
     assert set(schema.REAL_FEATURE_COLS) == union

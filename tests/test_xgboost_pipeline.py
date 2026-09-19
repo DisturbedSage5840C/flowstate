@@ -224,6 +224,65 @@ def test_train_predict_and_oof_use_each_targets_own_columns(tmp_path):
     assert oof["turbidity"].notna().all() and oof["do"].notna().all()
 
 
+def test_sample_weight_none_by_default():
+    df = _skewed_df(n=144)
+    pipe = WaterQualityXGB(n_folds=3, random_state=0, feature_cols=["f1", "f2", "f3"], targets=["do"])
+    assert pipe._sample_weight(df) is None
+
+
+def test_sample_weight_col_absent_from_df_returns_none():
+    df = _skewed_df(n=144)
+    pipe = WaterQualityXGB(n_folds=3, random_state=0, feature_cols=["f1", "f2", "f3"], targets=["do"],
+                           sample_weight_col="n_water_px")
+    assert pipe._sample_weight(df) is None       # column not present -> no weighting, not a crash
+
+
+def test_sample_weight_replaces_nan_and_nonpositive_with_the_median():
+    df = pd.DataFrame({"n_water_px": [10.0, 30.0, np.nan, -5.0, 20.0]})
+    pipe = WaterQualityXGB(sample_weight_col="n_water_px")
+    w = pipe._sample_weight(df)
+    median = np.median([10.0, 30.0, 20.0])
+    assert w.tolist() == [10.0, 30.0, median, median, 20.0]
+
+
+def test_sample_weight_col_reaches_the_underlying_xgb_fit_call(monkeypatch):
+    df = _skewed_df(n=144)
+    df["n_water_px"] = np.random.default_rng(0).uniform(20, 2000, len(df))
+    seen_weights = []
+    import xgboost as xgb
+    real_fit = xgb.XGBRegressor.fit
+
+    def spy_fit(self, X, y, sample_weight=None, **kw):
+        seen_weights.append(sample_weight)
+        return real_fit(self, X, y, sample_weight=sample_weight, **kw)
+
+    monkeypatch.setattr(xgb.XGBRegressor, "fit", spy_fit)
+    pipe = WaterQualityXGB(n_folds=3, random_state=0, feature_cols=["f1", "f2", "f3"], targets=["do"],
+                           sample_weight_col="n_water_px")
+    pipe.train(df, n_trials=2, verbose=False)
+    assert len(seen_weights) > 0 and all(w is not None for w in seen_weights)
+
+
+def test_sample_weight_affects_predict_oof_not_just_train():
+    """Regression test: predict_oof() refits its own per-fold models and, at one point, ignored
+    sample_weight_col entirely (always calling fit() unweighted), silently making a weighted pipeline's
+    out-of-fold evaluation identical to the unweighted one. Both train() and predict_oof() must apply it."""
+    df = _skewed_df(n=144)
+    rng = np.random.default_rng(1)
+    df["n_water_px"] = rng.uniform(20, 5000, len(df))
+    cols = ["f1", "f2", "f3"]
+
+    unweighted = WaterQualityXGB(n_folds=3, random_state=0, feature_cols=cols, targets=["turbidity"])
+    unweighted.train(df, n_trials=3, verbose=False)
+    weighted = WaterQualityXGB(n_folds=3, random_state=0, feature_cols=cols, targets=["turbidity"],
+                               sample_weight_col="n_water_px")
+    weighted.train(df, n_trials=3, verbose=False)
+
+    oof_u = unweighted.predict_oof(df)["turbidity"].to_numpy()
+    oof_w = weighted.predict_oof(df)["turbidity"].to_numpy()
+    assert not np.allclose(oof_u, oof_w), "weighted and unweighted predict_oof() gave identical output"
+
+
 def test_per_target_feature_cols_round_trip_through_save_and_load(tmp_path):
     import json
     df = _skewed_df(n=144)

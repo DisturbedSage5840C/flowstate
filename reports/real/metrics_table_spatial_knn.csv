@@ -1,0 +1,7 @@
+model,target,validation,n,R2,spearman,R2_log
+knn_densification_oof,do,station_shuffled_densification,8151,0.38528045409561196,0.6476743637695704,
+knn_xgb_densification_oof,do,station_shuffled_densification,8151,0.40079063520918157,0.6444678365218413,
+knn_densification_oof,bod,station_shuffled_densification,6833,-0.03673788528019273,0.6515488835782897,0.23415683804929033
+knn_xgb_densification_oof,bod,station_shuffled_densification,6833,0.08393727613657731,0.6688458534331055,0.45958305456196924
+knn_densification_oof,turbidity,station_shuffled_densification,3223,0.02792109508310958,0.6128928221201966,0.31843760020358136
+knn_xgb_densification_oof,turbidity,station_shuffled_densification,3223,0.10907089530684899,0.6483046730427677,0.43833516545779394

@@ -13,9 +13,16 @@ target's variance is between-station (set by local discharge, invisible from spa
 visit can resolve. Exact-value regression on those targets is near-zero skill (honestly reported, not hidden) and is
 kept only as a secondary, flagged result. What the same data *can* do well is a binary pollution screen — "is this
 station's water likely polluted, for an inspector to prioritise" — out-of-fold **AUC ≈ 0.72-0.78** across BOD>3 mg/L
-(CPCB Class C limit), BOD>6 mg/L, DO<4 mg/L and CPCB-class screens, plus a station-level BOD ranking (the strongest
-regression result in the project). See `AQUA_SENSE_PROJECT_PLAN.md` §11 and `reports/real/screening_metrics.json`
-for the full evidence.
+(CPCB Class C limit), BOD>6 mg/L, DO<4 mg/L and CPCB-class screens. See `AQUA_SENSE_PROJECT_PLAN.md` §11 and
+`reports/real/screening_metrics.json` for the full evidence.
+
+**Real-number regression, close to an existing station.** A second result, added later and reported separately: a
+distance-weighted spatial-KNN model (`src/models/spatial_baseline.py`) combining nearby *other* CPCB stations' known
+values with the satellite/context features raises out-of-fold regression skill substantially — DO R² 0.02 → **0.40**,
+BOD R²(log) 0.17 → **0.46**, turbidity R²(log) 0.04 → **0.44** — but **only near an already-monitored station**
+(skill fades from Spearman 0.70 at <5 km to 0.42 at 50-200 km). This is a genuinely different, easier question than
+"work anywhere in India" and is never blended with the numbers above. See `AQUA_SENSE_PROJECT_PLAN.md` §12 and
+`reports/real/spatial_knn_summary.json`.
 
 ## In plain terms
 
@@ -124,6 +131,7 @@ python -m scripts.validate_empirical_formulas       # 4. test literature formula
 python -m scripts.validate_landsat_temperature      #    (optional, needs a Kaggle token) Landsat temperature vs in-situ IoT sensors
 python -m scripts.train_real_models --trials 30     # 5. secondary: DO/BOD/turbidity regression, out-of-fold, SHAP -> reports/real/
 python -m scripts.train_screening                   # 6. headline: pollution-screening classifiers -> reports/real/screening_metrics.json
+python -m scripts.train_spatial_baseline            # 7. real-number regression near an existing station -> reports/real/spatial_knn_summary.json
 streamlit run src/app/streamlit_app.py              # dashboard (real-data mode when train_real.parquet exists; see the Screening tab)
 ```
 

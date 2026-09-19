@@ -32,6 +32,8 @@ class RealBundle:
     comparison: pd.DataFrame | None = None            # reports/real/model_comparison.csv
     dl_summary: dict = field(default_factory=dict)    # reports/real/dl_summary.json
     screening: dict = field(default_factory=dict)     # reports/real/screening_metrics.json (headline deliverable)
+    spatial_knn_metrics: pd.DataFrame | None = None    # reports/real/metrics_table_spatial_knn.csv
+    spatial_knn_summary: dict = field(default_factory=dict)  # reports/real/spatial_knn_summary.json
     has_predictions: bool = False                     # XGBoost out-of-fold predictions ({target}_pred)
     has_dl_predictions: bool = False                  # DL out-of-fold predictions ({target}_pred_dl)
 
@@ -91,6 +93,9 @@ def load_real(root: Path = ROOT) -> RealBundle | None:
         comparison=pd.read_csv(comparison_path) if comparison_path.exists() else None,
         dl_summary=read_json("dl_summary.json"),
         screening=read_json("screening_metrics.json"),
+        spatial_knn_metrics=(pd.read_csv(real_dir / "metrics_table_spatial_knn.csv")
+                             if (real_dir / "metrics_table_spatial_knn.csv").exists() else None),
+        spatial_knn_summary=read_json("spatial_knn_summary.json"),
         has_predictions=has_preds,
         has_dl_predictions=has_dl,
     )

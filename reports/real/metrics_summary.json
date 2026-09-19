@@ -572,6 +572,42 @@
     "R2": -0.38240630056698643,
     "spearman": 0.23935916070883512
   },
+  "n_water_px_weighting_ablation": {
+    "unweighted": {
+      "do": {
+        "R2": 0.01711375919070479,
+        "R2_log": NaN,
+        "spearman": 0.13961553089951229
+      },
+      "bod": {
+        "R2": 0.013441375709505432,
+        "R2_log": 0.1745596564829024,
+        "spearman": 0.39842983117467057
+      },
+      "turbidity": {
+        "R2": -0.03177194746446843,
+        "R2_log": 0.03447187096972826,
+        "spearman": 0.21167805981504959
+      }
+    },
+    "weighted": {
+      "do": {
+        "R2": 0.010937614363321302,
+        "R2_log": NaN,
+        "spearman": 0.12879569443079197
+      },
+      "bod": {
+        "R2": 0.00831585167462956,
+        "R2_log": 0.16006405388414413,
+        "spearman": 0.39485005899711617
+      },
+      "turbidity": {
+        "R2": -0.021448270208984432,
+        "R2_log": 0.036208504911427686,
+        "spearman": 0.22675908124168978
+      }
+    }
+  },
   "skill_notes": {
     "do": "none \u2014 DO is not optically active; kept for the low-DO screening flag (scripts/train_screening.py), not for its own accuracy"
   }
