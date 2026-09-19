@@ -35,11 +35,12 @@ from src.models.dl_model import (
     FEATURE_COLS,
     TARGET_COLS,
 )
+from src.models.spatial_cv import SpatialKFold
 
 # ── Config ────────────────────────────────────────────────────────────────────
 EPOCHS      = 60
 RANDOM_SEED = 42
-VAL_FRAC    = 0.20
+N_FOLDS     = 5   # site-blocked folds; fold 0 -> test, fold 1 -> val, rest -> train
 
 np.random.seed(RANDOM_SEED)
 
@@ -51,27 +52,25 @@ df = pd.read_parquet(DATA_PATH)
 print(f"  Loaded {len(df)} rows × {df.shape[1]} cols")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. Spatial-aware split: hold out last 3 sites alphabetically as test set
+# 2. Site-blocked split (same SpatialKFold as the XGBoost pipeline): every
+# site's rows land entirely in one of train/val/test, so val/test measure
+# generalization to unseen water bodies rather than leaking spatial
+# autocorrelation between rows of the same site.
 # ─────────────────────────────────────────────────────────────────────────────
-all_sites   = sorted(df["site"].unique().tolist())
-test_sites  = all_sites[-3:]          # last 3 alphabetically
-train_sites = all_sites[:-3]
+skf = SpatialKFold(n_folds=N_FOLDS, random_state=RANDOM_SEED)
+fold_labels = skf.get_fold_labels(df)
 
-print(f"\nAll sites ({len(all_sites)}): {all_sites}")
-print(f"Test  sites ({len(test_sites)}): {test_sites}")
-print(f"Train sites ({len(train_sites)}): {train_sites}")
+test_mask  = fold_labels == 0
+val_mask   = fold_labels == 1
+train_mask = ~(test_mask | val_mask)
 
-test_df       = df[df["site"].isin(test_sites)].copy()
-trainval_df   = df[df["site"].isin(train_sites)].copy()
+test_df  = df[test_mask].copy()
+val_df   = df[val_mask].copy()
+train_df = df[train_mask].copy()
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. Split trainval into 80 / 20 train / val (shuffled, seeded)
-# ─────────────────────────────────────────────────────────────────────────────
-trainval_df = trainval_df.sample(frac=1, random_state=RANDOM_SEED).reset_index(drop=True)
-n_val       = max(1, int(len(trainval_df) * VAL_FRAC))
-val_df      = trainval_df.iloc[:n_val].copy()
-train_df    = trainval_df.iloc[n_val:].copy()
-
+print(f"\nTest  sites: {sorted(df.loc[test_mask, 'site'].unique().tolist())}")
+print(f"Val   sites: {sorted(df.loc[val_mask, 'site'].unique().tolist())}")
+print(f"Train sites: {sorted(df.loc[train_mask, 'site'].unique().tolist())}")
 print(f"\nSplit sizes — train: {len(train_df)}, val: {len(val_df)}, test: {len(test_df)}")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -140,13 +139,16 @@ for i, col in enumerate(TARGET_COLS):
     overall[f"{col}_r2"]   = safe_r2(test_targets[:, i], test_preds[:, i])
     overall[f"{col}_rmse"] = safe_rmse(test_targets[:, i], test_preds[:, i])
 
-# Per-type metrics (on test set)
+# Per-type metrics (on test set). A type absent from this particular
+# test-fold draw (e.g. the fold happened to be all lakes) gets None/NaN,
+# not a literal 0.0 -- 0.0 would misleadingly read as "the model scored
+# zero on this type" when really it was never evaluated on it at all.
 per_type = {}
 if "water_body_type" in test_df.columns:
     for wtype in ("lake", "river"):
         mask_type = test_df["water_body_type"] == wtype
         if mask_type.sum() == 0:
-            per_type[wtype] = {f"{c}_r2": 0.0 for c in TARGET_COLS}
+            per_type[wtype] = {f"{c}_r2": None for c in TARGET_COLS}
             continue
         sub_df = test_df[mask_type].copy()
         # Align indices to preds array
@@ -161,8 +163,8 @@ if "water_body_type" in test_df.columns:
         per_type[wtype] = type_metrics
 else:
     per_type = {
-        "lake":  {f"{c}_r2": 0.0 for c in TARGET_COLS},
-        "river": {f"{c}_r2": 0.0 for c in TARGET_COLS},
+        "lake":  {f"{c}_r2": None for c in TARGET_COLS},
+        "river": {f"{c}_r2": None for c in TARGET_COLS},
     }
 
 # ─────────────────────────────────────────────────────────────────────────────

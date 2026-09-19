@@ -83,7 +83,7 @@ def main():
     
     if not data_path.exists():
         print(f"[ERROR] Training data not found at: {data_path}")
-        print("Please generate it first via: python scripts/generate_synthetic_data.py")
+        print("Please generate it first via: python scripts/generate_synthetic_train.py")
         sys.exit(1)
 
     print(f"\n=======================================================")
@@ -120,8 +120,12 @@ def main():
     xgb_pipe.save(model_dir)
 
     # 4. Generate Predictions and Metrics Report
+    # Uses predict_oof(), not predict(): predict() would score the final
+    # model (fit on all of df) against the same df it was trained on,
+    # which is in-sample evaluation and inflates R2/RMSE/MAE. predict_oof()
+    # refits per spatial-CV fold so every prediction is held-out.
     print("\n[EVAL] Computing Spatial Metrics Report (per water body type & overall)...")
-    preds = xgb_pipe.predict(df)
+    preds = xgb_pipe.predict_oof(df)
     reporter = MetricsReporter(targets=TARGET_COLS)
     metrics_table = reporter.report(df, preds)
     

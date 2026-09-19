@@ -219,6 +219,40 @@ class WaterQualityXGB:
         return instance
 
     # ------------------------------------------------------------------
+    # Out-of-fold prediction (honest per-type / per-fold evaluation)
+    # ------------------------------------------------------------------
+
+    def predict_oof(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Return genuine out-of-fold predictions for every row in df.
+
+        `predict()` uses the final model fit on the *entire* training set,
+        so scoring it against the same df it was trained on is in-sample
+        evaluation and inflates R²/RMSE/MAE. This instead refits a
+        fold-local model per spatial-CV split (using the tuned params from
+        `.train()`) and predicts only on that fold's held-out rows, so
+        every prediction comes from a model that never saw that row during
+        training. Use this for per-type/per-fold metrics on the training
+        table; use `predict()` for genuinely new/unseen data.
+        """
+        if not self._best_params:
+            raise RuntimeError("No tuned params available. Call .train() first.")
+        skf = SpatialKFold(n_folds=self.n_folds, random_state=self.random_state)
+        splits = list(skf.split(df))
+        X = df[self.feature_cols]
+        oof = {target: np.full(len(df), np.nan) for target in self.targets}
+        for target in self.targets:
+            if target not in self._best_params or target not in df.columns:
+                continue
+            y = df[target]
+            params = self._best_params[target]
+            for train_idx, val_idx in splits:
+                model = self._build_model(params, early_stopping=False)
+                model.fit(X.iloc[train_idx], y.iloc[train_idx])
+                raw = model.predict(X.iloc[val_idx])
+                oof[target][val_idx] = self._clip(raw, target)
+        return pd.DataFrame(oof, index=df.index)
+
+    # ------------------------------------------------------------------
     # Evaluation
     # ------------------------------------------------------------------
 

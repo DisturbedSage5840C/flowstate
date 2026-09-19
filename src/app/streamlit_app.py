@@ -466,8 +466,9 @@ with tab_metrics:
 
             if "per_type" in saved_metrics:
                 st.markdown("#### Per Water-Body Type Validation")
+                st.caption("A blank cell means that water-body type had zero samples in this test-fold draw, not a score of zero.")
                 mt_df = pd.DataFrame(saved_metrics["per_type"]).T
-                st.dataframe(mt_df.style.format("{:.3f}"), width='stretch')
+                st.dataframe(mt_df.style.format("{:.3f}", na_rep="—"), width='stretch')
         except Exception as e:
             st.warning(f"Could not load metrics: {e}")
     else:
@@ -612,7 +613,7 @@ with tab_metrics:
         else:
             st.info("Run `python scripts/train_models.py` to populate real metrics.")
     with col_dl:
-        st.markdown("**DL model — held-out alphabetical test sites** (`reports/metrics.json`)")
+        st.markdown("**DL model — held-out site-blocked spatial-CV test sites** (`reports/metrics.json`)")
         if dl_rows:
             st.dataframe(pd.DataFrame(dl_rows).set_index("Target"), width='stretch')
         else:

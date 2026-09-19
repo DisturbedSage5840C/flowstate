@@ -31,8 +31,6 @@ from src.features.feature_engineering import (
     compute_2bdm,
     compute_3bdm,
     compute_red_green_ratio,
-    compute_nechad_turbidity,
-    compute_chl_a_from_ndci,
     compute_do_surrogate,
 )
 from src.wqi.wqi_engine import compute_wqi_dataframe
@@ -120,20 +118,27 @@ def generate_synthetic_train(output_path: Path) -> pd.DataFrame:
         lons    = rng.normal(lon_c, 0.003, N_PER_SITE)
         temp_surface = rng.uniform(22.0, 35.0, N_PER_SITE)
 
-        # Spectral indices
+        # Spectral indices (features) — computed only from the noisy simulated
+        # bands, never from the true target values directly.
         B3, B4, B5, B8, B11 = bands["B3"], bands["B4"], bands["B5"], bands["B8"], bands["B11"]
         ndci      = compute_ndci(B5, B4)
         bdm2      = compute_2bdm(B5, B4)
         bdm3      = compute_3bdm(B4, B5, B8)  # using B8 as B6 proxy
         red_green = compute_red_green_ratio(B4, B3)
 
-        # Nechad turbidity
-        turb_red = compute_nechad_turbidity(B4)
-        turb_nir = compute_nechad_turbidity(B8, A_T=1528.0, C_T=0.3742)
-        turbidity = np.where(turb_red > 50, turb_nir, turb_red)
-
-        # Chl-a from NDCI
-        chl_a = compute_chl_a_from_ndci(ndci)
+        # Targets: the independently-sampled "true" values plus their own
+        # observation noise — NOT recomputed from ndci / Nechad-turbidity.
+        # Those formulas are deterministic, invertible transforms of columns
+        # that are also FEATURE_COLS (src/models/xgboost_pipeline.py), so
+        # using them for the label would let a model reconstruct the label
+        # algebraically from its own inputs (label leakage) instead of
+        # learning a genuine band -> water-quality relationship.
+        chl_a = np.clip(
+            bands["_chl_true"] * rng.normal(1.0, 0.10, N_PER_SITE), 0.5, None
+        ).astype(np.float32)
+        turbidity = np.clip(
+            bands["_turb_true"] * rng.normal(1.0, 0.10, N_PER_SITE), 0.5, None
+        ).astype(np.float32)
 
         # DO surrogate (use month from first date as representative)
         months = pd.DatetimeIndex(dates).month
