@@ -134,7 +134,7 @@ class SpatialKFold:
             random_state=self.random_state,
             n_init="auto",
         )
-        cluster_labels = kmeans.fit_predict(sites[["lat", "lon"]].values)
+        cluster_labels = kmeans.fit_predict(sites[[self.lat_col, self.lon_col]].values)
         self._fold_map = dict(zip(sites.index, cluster_labels.tolist()))
 
 

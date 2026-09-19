@@ -1,6 +1,7 @@
 """folium layers for predicted parameters and WQI tiers."""
 import base64
 import io
+import sys
 from pathlib import Path
 
 import folium
@@ -9,11 +10,18 @@ import numpy as np
 import rasterio
 
 matplotlib.use("Agg")
-from matplotlib import cm, colors  # noqa: E402
+import matplotlib.image  # noqa: E402
+from matplotlib import colors  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+from src.app.map_utils import WQI_CLASSES  # noqa: E402 — single source of truth for WQI tiers
 
 NODATA = -9999.0
-# WQI tiers from the project plan (<50 Excellent, 50-100 Good, >100 Poor).
-WQI_TIERS = [(50, "Excellent", "#1f77b4"), (100, "Good", "#2ca02c"), (float("inf"), "Poor", "#d62728")]
+# WQI tiers mirror src/wqi/wqi_engine.py's pollution-index convention (0 = pure, higher = worse),
+# via the same WQI_CLASSES the dashboard map legend uses (src/app/map_utils.py).
+WQI_TIERS = [
+    (info["range"][1], info["label"], info["color"]) for info in WQI_CLASSES.values()
+]
 PARAM_CMAPS = {"chl_a": "YlGn", "turbidity": "YlOrBr", "do": "RdYlBu", "wqi": "RdYlGn_r"}
 
 
@@ -42,7 +50,7 @@ def add_raster_overlay(m: folium.Map, tif: Path | str, param: str, name: str | N
     vmin = float(np.nanmin(data[valid])) if vmin is None else vmin
     vmax = float(np.nanmax(data[valid])) if vmax is None else vmax
     norm = colors.Normalize(vmin=vmin, vmax=max(vmax, vmin + 1e-9))
-    rgba = cm.get_cmap(PARAM_CMAPS.get(param, "viridis"))(norm(np.where(valid, data, vmin)))
+    rgba = matplotlib.colormaps[PARAM_CMAPS.get(param, "viridis")](norm(np.where(valid, data, vmin)))
     rgba[..., 3] = np.where(valid, 1.0, 0.0)
     buf = io.BytesIO()
     matplotlib.image.imsave(buf, rgba, format="png")

@@ -169,11 +169,10 @@ def load_dl_model():
 @st.cache_resource
 def load_xgboost_model():
     try:
-        import pickle
-        path = ROOT / "reports" / "xgboost_model.pkl"
-        if path.exists():
-            with open(path, "rb") as f:
-                return pickle.load(f)
+        from src.models.xgboost_pipeline import WaterQualityXGB
+        model_dir = ROOT / "reports" / "models"
+        if model_dir.exists():
+            return WaterQualityXGB.load(model_dir)
         return None
     except Exception as e:
         st.warning(f"XGBoost model unavailable: {e}")
@@ -181,20 +180,16 @@ def load_xgboost_model():
 
 
 def run_model_predict(df: pd.DataFrame, model_choice: str) -> pd.DataFrame:
-    """Route prediction through selected model's predict(df) interface."""
+    """Route prediction through the selected model's real predict(df) interface."""
     if model_choice == "DL (CNN-BiLSTM-Attention)":
         model = load_dl_model()
-        if model:
+        if model is not None:
             from src.models.dl_model import predict as dl_predict
             return dl_predict(df, model=model)
     else:
         model = load_xgboost_model()
-        if model:
-            try:
-                from src.models.xgboost_pipeline import predict as xgb_predict
-                return xgb_predict(df, model=model)
-            except ImportError:
-                pass
+        if model is not None:
+            return model.predict(df)
     return pd.DataFrame()
 
 # ─────────────────────────────────────────────────────────
@@ -288,8 +283,10 @@ with st.sidebar:
 # ─────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=300)
-def get_predictions(site_names: tuple, start: date, end: date) -> pd.DataFrame:
-    """Load from processed/train.parquet if available, else synthesise."""
+def get_predictions(site_names: tuple, start: date, end: date, model_choice: str) -> pd.DataFrame:
+    """Load feature rows from processed/train.parquet and run the selected model's
+    real predict(df) interface, else synthesise. Falls back to stored labels only
+    if the model itself is unavailable (still flagged, never presented as measured)."""
     data_path = ROOT / "data" / "processed" / "train.parquet"
     if data_path.exists():
         try:
@@ -300,6 +297,13 @@ def get_predictions(site_names: tuple, start: date, end: date) -> pd.DataFrame:
             if len(df) > 0:
                 if "display_name" not in df.columns:
                     df["display_name"] = df["site"].apply(lambda s: s.replace("_", " ").title())
+                preds = run_model_predict(df, model_choice)
+                if len(preds) == len(df):
+                    df = df.copy()
+                    for col in ("chl_a", "turbidity", "do"):
+                        if col in preds.columns:
+                            df[col] = preds[col].to_numpy()
+                    df = compute_wqi_dataframe(df)
                 return df
         except Exception:
             pass
@@ -310,7 +314,7 @@ def get_predictions(site_names: tuple, start: date, end: date) -> pd.DataFrame:
 
 
 selected_site_names = tuple(s["name"] for s in selected_sites)
-predictions_df = get_predictions(selected_site_names, start_date, end_date)
+predictions_df = get_predictions(selected_site_names, start_date, end_date, model_choice)
 
 # Latest prediction per site (for map & KPIs)
 if len(predictions_df) > 0:
@@ -335,6 +339,16 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+st.warning(
+    "**Demonstration data — not measurements.** No in-situ water-quality sensors were "
+    "deployed for this project. Chl-a, turbidity, and DO shown here come from a synthetic "
+    "generator plus published empirical proxy formulas (NDCI, Nechad et al. 2010), used to "
+    "exercise the pipeline end-to-end. Model metrics are drawn from `reports/` and are real "
+    "outputs of the training runs, but the underlying labels are proxies, not lab-measured "
+    "ground truth. See `data/ground_truth/data_source_log.md` for the full disclosure.",
+    icon="⚠️",
+)
+
 st.divider()
 
 if len(latest_preds) > 0:
@@ -390,7 +404,7 @@ with tab_map:
 
         else:
             if len(latest_preds) > 0 and "lat" in latest_preds.columns:
-                fig = px.scatter_mapbox(
+                fig = px.scatter_map(
                     latest_preds,
                     lat="lat",
                     lon="lon",
@@ -401,7 +415,7 @@ with tab_map:
                     color_continuous_scale="RdYlGn_r",
                     zoom=4,
                     center={"lat": 22.5, "lon": 80.0},
-                    mapbox_style="open-street-map",
+                    map_style="open-street-map",
                     title="WQI across selected sites",
                 )
                 st.plotly_chart(fig, width='stretch')
@@ -567,37 +581,48 @@ with tab_metrics:
 
     # ── Model Benchmark Comparison ────────────────────────
     st.subheader("⚔️ Model Benchmark Comparison")
-    st.caption("Honest spatial-kfold cross-validation on held-out water bodies (never seen during training)")
 
-    bench_data = {
-        "Metric": [
-            "Chlorophyll-a R²", "Chlorophyll-a RMSE (µg/L)",
-            "Turbidity R²", "Turbidity RMSE (NTU)",
-            "Dissolved Oxygen R²", "Dissolved Oxygen RMSE (mg/L)"
-        ],
-        "Baseline (Empirical / XGBoost)": [
-            "0.770", "10.10",
-            "0.830", "16.40",
-            "0.710", "1.95"
-        ],
-        "DL (CNN-BiLSTM-Attention)": [
-            f"{ov.get('chl_a_r2', 0.908):.3f}",
-            f"{ov.get('chl_a_rmse', 60.88):.2f}",
-            f"{ov.get('turbidity_r2', -1.341):.3f}",
-            f"{ov.get('turbidity_rmse', 4.42):.2f}",
-            f"{ov.get('do_r2', -0.509):.3f}",
-            f"{ov.get('do_rmse', 2.19):.2f}",
-        ],
-        "Evaluation Note": [
-            "DL achieves R² > 0.90 on held-out sites (Ulsoor, Varthur, Yamuna)",
-            "Captures non-linear phytoplankton blooms via parallel Conv1d + attention",
-            "Monsoon sediment loads require NIR-branch switching",
-            "Low error range in NTU across held-out rivers and lakes",
-            "DO inferred as surrogate variable from Chl-a, turbidity and temperature",
-            "RMSE bounded within ±2.2 mg/L of in-situ station monitoring"
-        ]
-    }
-    st.dataframe(pd.DataFrame(bench_data).set_index("Metric"), width='stretch')
+    summary_path = ROOT / "reports" / "metrics_summary.json"
+    xgb_rows = []
+    if summary_path.exists():
+        try:
+            with open(summary_path, encoding="utf-8") as f:
+                xgb_summary = json.load(f)
+            cv_rmse = xgb_summary.get("spatial_cv_best_rmse", {})
+            for target, rmse in cv_rmse.items():
+                xgb_rows.append({"Target": target, "Spatial-CV RMSE": round(rmse, 4)})
+        except Exception as e:
+            st.warning(f"Could not load XGBoost metrics: {e}")
+
+    dl_rows = []
+    if ov:
+        for target in ("chl_a", "turbidity", "do"):
+            if f"{target}_rmse" in ov:
+                dl_rows.append({
+                    "Target": target,
+                    "Test-set R2": round(ov.get(f"{target}_r2", float("nan")), 3),
+                    "Test-set RMSE": round(ov.get(f"{target}_rmse", float("nan")), 3),
+                })
+
+    col_xgb, col_dl = st.columns(2)
+    with col_xgb:
+        st.markdown("**XGBoost — genuine site-blocked spatial-CV RMSE** (`reports/metrics_summary.json`)")
+        if xgb_rows:
+            st.dataframe(pd.DataFrame(xgb_rows).set_index("Target"), width='stretch')
+        else:
+            st.info("Run `python scripts/train_models.py` to populate real metrics.")
+    with col_dl:
+        st.markdown("**DL model — held-out alphabetical test sites** (`reports/metrics.json`)")
+        if dl_rows:
+            st.dataframe(pd.DataFrame(dl_rows).set_index("Target"), width='stretch')
+        else:
+            st.info("Run `python scripts/train_dl_model.py` to populate real metrics.")
+
+    st.caption(
+        "Every number above is read directly from a `reports/*.json` file produced by an "
+        "actual training run — nothing on this page is hand-typed. See the caveats in the "
+        "'ℹ️ About' tab regarding what 'held-out' means for each model."
+    )
 
 # ═══════════════════════════════════════════════════════
 # TAB 3: SHAP
@@ -613,36 +638,11 @@ with tab_shap:
         for img_path in shap_files[:4]:
             st.image(str(img_path), caption=img_path.stem, width='stretch')
     else:
-        feature_importance = {
-            "B5 (Red-edge 705 nm)":    0.28,
-            "NDCI (Chlorophyll Index)": 0.22,
-            "B4 (Red 665 nm)":          0.14,
-            "B3 (Green 560 nm)":        0.11,
-            "Turbidity Proxy":          0.09,
-            "B8 (NIR 842 nm)":          0.07,
-            "BDM3 (3-Band Model)":      0.05,
-            "Surface Temperature":      0.04,
-        }
-        fig_shap = px.bar(
-            x=list(feature_importance.values()),
-            y=list(feature_importance.keys()),
-            orientation="h",
-            title="Feature Importance (Chlorophyll-a Prediction)",
-            labels={"x": "Mean |SHAP value|", "y": "Spectral Feature"},
-            color=list(feature_importance.values()),
-            color_continuous_scale="Blues",
+        st.info(
+            "No SHAP plots found in `reports/shap_plots/`. Run "
+            "`python scripts/train_models.py` (which calls `SHAPExplainer.explain_all`) "
+            "to generate real feature-attribution plots for the trained XGBoost models."
         )
-        fig_shap.update_layout(coloraxis_showscale=False, yaxis={"autorange": "reversed"})
-        st.plotly_chart(fig_shap, width='stretch')
-
-    st.divider()
-    st.markdown("""
-    ### Key Physical & Spectral Insights for Regulators:
-    - 🟢 **Band 5 (Red-Edge at 705 nm)** dominates Chlorophyll-a prediction — directly capturing phytoplankton cellular scattering and absorption trough.
-    - 🔵 **NDCI (Normalised Difference Chlorophyll Index)** is the strongest engineered feature, isolating Case-II water optical complexity.
-    - 🟡 **NIR Band (842 nm)** drives turbidity in highly turbid monsoon rivers through particulate backscattering.
-    - 💨 **DO is a Surrogate Prediction**: Because pure water has no direct optical absorption for dissolved gases, DO is inferred from biological activity (Chl-a), turbidity, and surface thermal dynamics.
-    """)
 
 # ═══════════════════════════════════════════════════════
 # TAB 4: About
