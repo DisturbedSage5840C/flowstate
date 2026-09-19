@@ -4,8 +4,8 @@ Requires Earth Engine credentials. Writes config/mndwi_thresholds.yaml (never to
 
     python -m scripts.tune_mndwi --start 2024-01-01 --end 2024-06-30 [--sites bellandur dal_lake]
 
-Eyeball the printed histogram summary before trusting a value: a bimodal MNDWI distribution
-gives a reliable Otsu split, a unimodal one (e.g. a narrow river dominated by water) does not.
+A site's Otsu split is accepted only if the sample is clearly bimodal (see masking.choose_threshold); otherwise the
+standard default 0.0 is kept and the reason is recorded.
 """
 import argparse
 import datetime as dt
@@ -47,10 +47,11 @@ def main():
         except RuntimeError as e:
             print(f"{name}: {e}")
             continue
+        thr, method = masking.choose_threshold(vals)
         share_water = float((vals > thr).mean())
         pcts = np.percentile(vals, [5, 25, 50, 75, 95]).round(2).tolist()
-        print(f"{name:26s} otsu={thr:+.3f}  water_share={share_water:.2f}  MNDWI p5/25/50/75/95={pcts}")
-        tuned[name] = {"threshold": round(thr, 3), "method": "otsu", "period": f"{args.start}..{args.end}",
+        print(f"{name:26s} threshold={thr:+.3f} [{method}]  share above={share_water:.2f}  MNDWI p5/25/50/75/95={pcts}")
+        tuned[name] = {"threshold": round(thr, 3), "method": method, "period": f"{args.start}..{args.end}",
                        "n_pixels": int(vals.size), "tuned_on": dt.date.today().isoformat()}
 
     DEFAULT_THRESHOLDS.write_text(yaml.safe_dump({"thresholds": tuned}, sort_keys=True))
