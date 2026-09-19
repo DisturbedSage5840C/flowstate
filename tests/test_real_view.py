@@ -108,14 +108,23 @@ def test_load_real_merges_oof_predictions_and_reads_reports(tmp_path):
 def _app():
     import sys
     sys.path.insert(0, ".")
+    import pandas as pd
     from tests.test_real_view import make_table
     from src.app.real_data import RealBundle
     from src.app import real_view
     metrics = __import__("pandas").DataFrame([
         {"model": "xgboost_oof", "target": "do", "water_body_type": "overall", "n": 24, "R2": 0.1, "RMSE": 1.0, "MAE": 0.8},
         {"model": "baseline_mean", "target": "do", "water_body_type": "overall", "n": 24, "R2": -0.05, "RMSE": 1.1, "MAE": 0.9}])
+    screening = {"shortlist_target": "cpcb_polluted", "targets": {"bod_gt_3": {
+        "description": "BOD above 3 mg/L (CPCB Class B/C limit)", "n": 6833, "base_rate": 0.288, "roc_auc": 0.755,
+        "average_precision": 0.601, "lift_over_base_rate": 2.1,
+        "precision_at_k": {"top_5pct": 0.8, "top_10pct": 0.77, "top_20pct": 0.7},
+        "lift_at_k": {"top_5pct": 2.8, "top_10pct": 2.7, "top_20pct": 2.4}}}}
+    shortlist = pd.DataFrame({"site": ["A", "B"], "breach_probability": [0.95, 0.91], "visits": [3, 1],
+                              "actually_breached": [1.0, 0.0], "state": ["Delhi", "Karnataka"]})
     real_view.render(RealBundle(table=make_table(), metrics=metrics, summary={"rows": 24}, has_predictions=True,
-                                has_dl_predictions=True))
+                                has_dl_predictions=True, screening=screening, shortlist=shortlist,
+                                summary_metrics={"skill": {"do": "none - not optically active"}}))
 
 
 def _aoi_app():
@@ -181,6 +190,10 @@ def test_real_view_renders_without_exceptions():
     assert not at.exception, [e.value for e in at.exception]
     assert any("Real data" in w.value for w in at.warning)
     assert [m.label for m in at.metric][:2] == ["Stations", "Matched visits"]
+    assert at.tabs[0].label.endswith("Screening")
+    body = " ".join(d.value for d in at.markdown) + " ".join(c.value for c in at.caption)
+    assert "inspect" in body.lower()                                   # the shortlist is presented
+    assert any("not optically active" in w.value for w in at.warning)  # DO carries its honesty flag
     # switching to model values and another parameter still renders
     for label in ("XGBoost (out-of-fold)", "DL model (out-of-fold)"):
         at.radio(key="rv_source").set_value(label).run()

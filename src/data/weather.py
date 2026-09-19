@@ -20,6 +20,7 @@ total requested days by roughly (span_of_data / window_days) -- an ~8x reduction
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import time
 
@@ -60,15 +61,42 @@ def compute_rainfall_windows(visits: pd.DataFrame, window_days: int = DEFAULT_WI
     return pd.DataFrame(rows, columns=["site", "start_date", "end_date"])
 
 
+class QuotaExhausted(RuntimeError):
+    """Open-Meteo's daily quota is gone; only a UTC-midnight reset will clear it."""
+
+
+def seconds_to_next_hour(now: dt.datetime | None = None) -> float:
+    """Seconds until the next UTC hour boundary (plus a few seconds of slack)."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    nxt = (now + dt.timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+    return (nxt - now).total_seconds() + 5.0
+
+
+def rate_limit_wait(reason: str, attempt: int, now: dt.datetime | None = None) -> float:
+    """How long to wait after a 429, based on WHICH limit was hit.
+
+    Open-Meteo caps the free tier per minute (600), per hour (6,000) and per day (10,000), and says which
+    one was hit in the response body. Exponential backoff tops out around a minute, so it can clear a
+    *minute* limit but never an *hour* one -- an earlier version retried 5 times, gave up, and looked like
+    a dead quota when the real wait was until the next hour boundary. Daily raises instead of sleeping
+    for hours.
+    """
+    low = (reason or "").lower()
+    if "daily" in low:
+        raise QuotaExhausted(f"Open-Meteo daily quota exhausted: {reason!r}. Resets at UTC midnight; "
+                             "rerun then, or use --offline to proceed with what is cached.")
+    if "hourly" in low:
+        return seconds_to_next_hour(now)
+    return min(2.0 * (2 ** attempt), 60.0)
+
+
 def fetch_precip_batch(lats: list[float], lons: list[float], start_date: str, end_date: str,
                        timeout: float = 30.0) -> list[dict]:
     """One API call for up to BATCH_SIZE locations sharing a date range; returns a list of
     {time: [...], precipitation_sum: [...]}.
 
-    Retries with exponential backoff on HTTP 429. Note this only smooths over short bursts -- if
-    the day's call quota is actually exhausted, every retry (and every later call) will also 429
-    until the free tier's quota resets; compute_rainfall_windows is what keeps total volume low
-    enough that this project's fetch can plausibly finish inside a day's quota at all.
+    Retries on HTTP 429, waiting as long as the limit that was actually hit requires (see
+    rate_limit_wait): seconds for a minute limit, up to an hour for an hourly one.
     """
     params = {
         "latitude": ",".join(f"{v:.5f}" for v in lats),
@@ -81,8 +109,12 @@ def fetch_precip_batch(lats: list[float], lons: list[float], start_date: str, en
     for attempt in range(MAX_RETRIES):
         resp = requests.get(ARCHIVE_URL, params=params, timeout=timeout)
         if resp.status_code == 429:
-            wait = 2.0 * (2 ** attempt)
-            log.warning("rate limited, retrying in %.0fs (attempt %d/%d)", wait, attempt + 1, MAX_RETRIES)
+            try:
+                reason = resp.json().get("reason", "")
+            except ValueError:
+                reason = resp.text[:200]
+            wait = rate_limit_wait(reason, attempt)
+            log.warning("rate limited (%s); waiting %.0fs (attempt %d/%d)", reason, wait, attempt + 1, MAX_RETRIES)
             time.sleep(wait)
             continue
         resp.raise_for_status()
@@ -169,14 +201,16 @@ def antecedent_rainfall_features(visits: pd.DataFrame, rainfall: pd.DataFrame) -
 
     def lookup(site, date, window):
         cum = cum_by_site.get(site)
-        if cum is None:
+        if cum is None or not len(cum):
             return float("nan")
         end = date - pd.Timedelta(days=1)
         start = date - pd.Timedelta(days=window)
-        end_val = cum.reindex([end]).ffill().iloc[0] if len(cum) else float("nan")
-        before_start = cum[cum.index <= start]
-        start_val = before_start.iloc[-1] if len(before_start) else 0.0
-        return end_val - start_val
+        # asof = last cumulative value at or before the date. reindex([end]).ffill() looks equivalent but is
+        # not: reindexing to a single label drops every other row first, so it yields NaN whenever that exact
+        # day is missing from the cache -- silently nulling the feature instead of using the day before it.
+        end_val = cum.asof(end)
+        start_val = cum.asof(start)
+        return end_val - (0.0 if pd.isna(start_val) else start_val)
 
     feats: dict[str, list[float]] = {f"rain_{w}d_mm": [] for w in windows}
     for site, date in zip(visits["site"], visits["date"]):

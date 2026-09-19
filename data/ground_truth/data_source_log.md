@@ -88,6 +88,26 @@ Loaded: ~84,000 visits at ~4,000 stations in 36 states/UTs (2019-2024), of which
   `train_real.parquet` follows the seasonal cycle but is **not an accurate water temperature**; an error of 8–10 °C changes
   the oxygen-saturation value by about 2 mg/L. Treat it as a seasonal indicator only.
 
+### Open-Meteo historical rainfall (ERA5 reanalysis) — fetched, tested, then dropped from the model
+- Free archive API (https://open-meteo.com), no key. ERA5/ERA5-Land, **~9-25 km grid, a model reanalysis, not gauge
+  data** — regional rainfall context only. Code: `src/data/weather.py`, `scripts/backfill_context_features.py`.
+- Antecedent sums over the 3/7/14/30 days strictly before each visit (runoff lags rain by hours to days).
+- Values are sound: monsoon median 149 mm vs winter 10 mm over 30 days, windows monotone in 100 % of rows.
+- **It does not help.** Clean ablation on identical rows and identical folds (the earlier "DO 0.022 -> 0.036" claim
+  had compared a 2,517-row run against an 8,461-row one, so it measured sample size, not features):
+
+  | target | spectral only | + water-body type | + season | + urban proximity | + rainfall |
+  |---|---|---|---|---|---|
+  | BOD | −0.011 | −0.037 | −0.025 | **+0.121** | +0.122 |
+  | DO | **−0.001** | −0.036 | −0.032 | −0.074 | −0.079 |
+  | turbidity | **−0.065** | −0.071 | −0.060 | −0.111 | −0.158 |
+
+  Urban proximity is the entire BOD gain; rainfall adds +0.001 there and actively hurts DO and turbidity. The columns
+  stay in the table as data but are in **no** feature set (`src/models/schema.FEATURE_SETS`).
+- Rate limits are per minute (600), hour (6,000) and day (10,000). The live 429 is `"Hourly API request limit
+  exceeded"` — an earlier note assumed the daily cap and planned to wait for UTC midnight; the real wait is until the
+  next hour. `src/data/weather.rate_limit_wait` now reads which limit was hit and waits accordingly.
+
 ### Sources reviewed and NOT used
 | Source | Verdict |
 |---|---|
@@ -118,17 +138,33 @@ buffer radius is 500 m (as in the project plan). Only visits with a clear scene 
   this per-type heterogeneity itself, instead of a single pooled formula flattening it away.
 - Grab-sample timing, station coordinates, atmospheric correction over turbid water and mixed pixels are all likely noise
   sources; none of them has been quantified.
-- **2026-09-19 rectification pass**: switched the default training/validation table from `train_real.parquet` (2,517 rows)
-  to the larger, backend-cross-checked `train_real_large.parquet` (8,461 rows); added the turbidity recalibration and
-  water-body-type feature above; added Spearman correlation as a headline metric in `MetricsReporter` alongside R²/R²_log,
-  since raw R² is a misleading number for these heavy-tailed, weak-signal targets (it stays near zero/negative even when
-  the model beats naive per-fold mean/median baselines on rank correlation and log-scale R²); added a satellite-only
-  WQI-tier classifier (`src/models/tier_classifier.py`) as a leakage-free secondary deliverable (OOF accuracy 0.29 vs
-  0.27 majority-class baseline). None of this raises raw out-of-fold R² above zero for DO/BOD/turbidity — that ceiling
-  is real, not a fixable defect in the code.
+- **2026-09-19 rectification pass**: switched the default table to `train_real_large.parquet` (8,461 rows), recalibrated
+  the turbidity formula, added `water_body_type` as a feature, and added Spearman as a headline metric alongside R²/R²_log.
+- **2026-09-19 model rework (measured, not assumed).** Five experiments decided the final design:
+  1. **Variance decomposition** — 85-100 % of each target's variance is *between* stations, only 11-22 % within. An
+     oracle that knew each station's own mean would score R² 0.61 (DO), 0.79 (BOD), 0.49 (turbidity). Site-blocked
+     validation deliberately withholds exactly that, which is why absolute concentration retrieval stays near zero.
+  2. **Per-target ablation** (table in the Open-Meteo section above) — one shared feature list was wrong; each target
+     now has its own (`FEATURE_SETS`).
+  3. **Learning curve** — BOD>3 screening AUC 0.743 at 25 % of stations, 0.755 at 100 %. **Extracting the remaining
+     ~69,600 CPCB visits would gain almost nothing**; the ceiling is the signal, not sample size.
+  4. **Match quality** — ρ(B4, turbidity) rises 0.194 → 0.368 from the smallest to the largest water bodies, while the
+     satellite/sample date gap barely matters (0.286 / 0.315 / 0.274 at 0 / 1 / 2-3 days). Water-body size, not timing,
+     is the limiting factor, so multi-scene compositing was not pursued.
+  5. **Threshold screening works where regression does not** — ranking visits by breach probability reaches AUC 0.755
+     for BOD > 3 mg/L (precision 0.77 in the top 10 % against a 28.8 % base rate) and 0.730 for the CPCB
+     polluted/acceptable split. This is now the primary deliverable (`scripts/train_screening.py`).
+- Two variants of the regression do carry real signal and are reported: **station-level BOD** (median spectra → median
+  BOD, R² ≈ 0.20, Spearman ≈ 0.39) and **turbidity anomaly** relative to a station's own mean (R² ≈ 0.08) — i.e. the
+  satellite can see *change* at a known station better than it can see the absolute level of a new one.
+- Grab-sample timing, station coordinates, atmospheric correction over turbid water and mixed pixels remain unquantified
+  noise sources.
 
 ## 5. Disclosure text for the pitch
 > "Labels are CPCB in-situ grab-sample measurements (DO, BOD, turbidity) from the National Water Data Portal, matched
-> to Sentinel-2 L2A reflectance within ±3 days. Chlorophyll-a has no ground truth and is shown only as an index. Skill is
-> reported out-of-fold on site-blocked spatial folds next to a 'predict the average' baseline; it is currently low, and we
-> say so."
+> to Sentinel-2 L2A reflectance within ±3 days. Chlorophyll-a has no ground truth and is shown only as an index.
+> We do not claim to predict concentrations: dissolved oxygen and BOD are not optically active, and 85-100 % of each
+> parameter's variance is between stations, which our site-blocked validation withholds. What the data does support is
+> **screening** — ranking stations by the probability of breaching a regulatory limit, which reaches AUC 0.75 for
+> BOD > 3 mg/L and finds a breach in 77 % of the top-ranked 10 % against a 29 % base rate. Every number is out-of-fold,
+> reported next to a 'predict the average' baseline."

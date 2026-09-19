@@ -185,3 +185,52 @@ def test_models_saved_without_a_log_setting_load_as_raw_scale(tmp_path):
     cfg.pop("log_targets")
     (tmp_path / "config.json").write_text(json.dumps(cfg))
     assert WaterQualityXGB.load(tmp_path).log_targets == set()
+
+
+# ---------------------------------------------------------------------------
+# Per-target feature sets (context features help BOD and hurt DO/turbidity)
+# ---------------------------------------------------------------------------
+
+def test_each_target_is_trained_and_served_on_its_own_columns(tmp_path):
+    rng = np.random.default_rng(0)
+    n = 120
+    df = pd.DataFrame({
+        "site": np.repeat([f"s{i}" for i in range(12)], 10),
+        "lat": np.repeat(np.linspace(10, 30, 12), 10), "lon": np.repeat(np.linspace(70, 90, 12), 10),
+        "water_body_type": "lake",
+        "spec": rng.normal(size=n), "ctx": rng.normal(size=n), "noise": rng.normal(size=n),
+    })
+    df["do"] = 6 + df["spec"]
+    df["bod"] = np.exp(1 + df["ctx"])
+    sets = {"do": ["spec"], "bod": ["spec", "ctx"]}
+    pipe = WaterQualityXGB(n_folds=3, random_state=0, feature_cols=sets, targets=["do", "bod"])
+    pipe.train(df, n_trials=2, verbose=False)
+
+    assert pipe._features_for("do") == ["spec"] and pipe._features_for("bod") == ["spec", "ctx"]
+    assert pipe.all_feature_cols == ["spec", "ctx"]              # union, first-seen order, no duplicates
+    assert pipe._models["do"].n_features_in_ == 1                 # the DO model never saw the context column
+    assert pipe._models["bod"].n_features_in_ == 2
+
+    preds = pipe.predict(df)
+    assert list(preds.columns) == ["do", "bod"] and preds.notna().all().all()
+    assert pipe.predict_oof(df).notna().all().all()
+
+    pipe.save(tmp_path)
+    reloaded = WaterQualityXGB.load(tmp_path)
+    assert reloaded.feature_cols == sets
+    pd.testing.assert_frame_equal(preds, reloaded.predict(df))
+
+
+def test_a_plain_list_still_applies_to_every_target(tmp_path):
+    df = _skewed_df()
+    pipe = WaterQualityXGB(n_folds=3, random_state=0, feature_cols=["f1", "f2", "f3"], targets=["do", "turbidity"])
+    pipe.train(df, n_trials=1, verbose=False)
+    assert pipe._features_for("do") == pipe._features_for("turbidity") == ["f1", "f2", "f3"]
+    pipe.save(tmp_path)
+    assert WaterQualityXGB.load(tmp_path).feature_cols == ["f1", "f2", "f3"]
+
+
+def test_missing_feature_set_for_a_target_is_a_clear_error():
+    pipe = WaterQualityXGB(feature_cols={"do": ["a"]}, targets=["do", "bod"])
+    with pytest.raises(KeyError, match="no feature set for target 'bod'"):
+        pipe._features_for("bod")

@@ -30,6 +30,9 @@ class RealBundle:
     summary: dict = field(default_factory=dict)       # reports/real/dataset_summary.json
     validation: dict = field(default_factory=dict)    # reports/real/empirical_formula_validation.json
     comparison: pd.DataFrame | None = None            # reports/real/model_comparison.csv
+    summary_metrics: dict = field(default_factory=dict)  # reports/real/metrics_summary.json
+    screening: dict = field(default_factory=dict)     # reports/real/screening_metrics.json
+    shortlist: pd.DataFrame | None = None             # reports/real/screening_shortlist.csv
     dl_summary: dict = field(default_factory=dict)    # reports/real/dl_summary.json
     has_predictions: bool = False                     # XGBoost out-of-fold predictions ({target}_pred)
     has_dl_predictions: bool = False                  # DL out-of-fold predictions ({target}_pred_dl)
@@ -76,12 +79,16 @@ def load_real(root: Path = ROOT) -> RealBundle | None:
     if metrics is not None:
         metrics = metrics.drop_duplicates(["model", "target", "water_body_type"], keep="first")
     comparison_path = real_dir / "model_comparison.csv"
+    shortlist_path = real_dir / "screening_shortlist.csv"
     return RealBundle(
         table=table,
         metrics=metrics,
         summary=read_json("dataset_summary.json"),
         validation=read_json("empirical_formula_validation.json"),
         comparison=pd.read_csv(comparison_path) if comparison_path.exists() else None,
+        summary_metrics=read_json("metrics_summary.json"),
+        screening=read_json("screening_metrics.json"),
+        shortlist=pd.read_csv(shortlist_path) if shortlist_path.exists() else None,
         dl_summary=read_json("dl_summary.json"),
         has_predictions=has_preds,
         has_dl_predictions=has_dl,

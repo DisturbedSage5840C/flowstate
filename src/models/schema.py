@@ -20,10 +20,37 @@ SEASONS = ("winter", "summer", "monsoon")
 RAINFALL_COLS = ["rain_3d_mm", "rain_7d_mm", "rain_14d_mm", "rain_30d_mm"]
 URBAN_PROXY_COLS = ["dist_nearest_city_km", "urban_load_index"]
 
-REAL_FEATURE_COLS = ["B2", "B3", "B4", "B5", "B6", "B8", "B11", "ndci", "bdm2", "bdm3", "red_green", "nir",
-                     "is_river", "is_lake", "is_reservoir",
-                     "is_winter", "is_summer", "is_monsoon", *RAINFALL_COLS, *URBAN_PROXY_COLS]
+SPECTRAL_COLS = ["B2", "B3", "B4", "B5", "B6", "B8", "B11", "ndci", "bdm2", "bdm3", "red_green", "nir"]
+TYPE_COLS = [f"is_{t}" for t in WATER_BODY_TYPES]
+SEASON_COLS = [f"is_{s}" for s in SEASONS]
+
 REAL_TARGET_COLS = ["do", "bod", "turbidity"]          # real labels; Chl-a has no ground truth
+
+# Per-target feature sets, chosen by ablation on train_real_large.parquet -- identical rows (rainfall present,
+# n=4,684 / 5,571 / 2,308) and identical site-blocked folds, so these compare features, not sample size.
+# A single shared list was measurably wrong: context features help BOD a lot and hurt the other two.
+#
+#   target     spectral   +type    +season   +urban        +rainfall
+#   bod        -0.011     -0.037   -0.025    +0.121 <-best  +0.122   (Spearman 0.256 -> 0.350)
+#   do         -0.001     -0.036   -0.032    -0.074         -0.079   (spectral-only is best; still ~0)
+#   turbidity  -0.065     -0.071   -0.060    -0.111         -0.158   (spectral-only is best)
+#
+# RAINFALL_COLS are deliberately in NO feature set: they never helped (+0.001 on BOD) and hurt DO and
+# turbidity. They stay in the table as data, and the finding is recorded in data_source_log.md.
+FEATURE_SETS = {
+    "do": list(SPECTRAL_COLS),
+    "turbidity": SPECTRAL_COLS + TYPE_COLS,
+    "bod": SPECTRAL_COLS + TYPE_COLS + SEASON_COLS + URBAN_PROXY_COLS,
+}
+
+# Union of everything any target uses -- for callers that need one column list (the tier/screening
+# classifiers, dropna checks, the dashboard). Not a feature set for any single regression target.
+REAL_FEATURE_COLS = SPECTRAL_COLS + TYPE_COLS + SEASON_COLS + URBAN_PROXY_COLS
+
+
+def features_for(target: str) -> list[str]:
+    """Feature columns for one regression target (falls back to the union for unknown targets)."""
+    return list(FEATURE_SETS.get(target, REAL_FEATURE_COLS))
 
 # Synthetic demo table (includes a simulated surface temperature and a simulated Chl-a label).
 SYNTH_FEATURE_COLS = ["B2", "B3", "B4", "B5", "B8", "B11", "ndci", "bdm2", "bdm3", "red_green", "nir",

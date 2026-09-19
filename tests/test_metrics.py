@@ -112,3 +112,27 @@ def test_r2_log_reported_for_heavy_tailed_targets_only():
     do = t[(t.target == "do") & (t.water_body_type == "overall")].iloc[0]
     assert bod["R2_log"] > 0.9
     assert np.isnan(do["R2_log"])
+
+
+def test_constant_per_fold_baseline_gets_no_spearman():
+    """A 'predict the training mean' baseline is constant inside each fold, so it holds no within-fold
+    ranking information; pooling folds with different constants previously produced a confident-looking
+    negative correlation that measured only between-fold offsets."""
+    import numpy as np
+    import pandas as pd
+    from src.models.metrics import MetricsReporter
+
+    rng = np.random.default_rng(0)
+    folds = np.repeat([0, 1, 2, 3], 50)
+    y = rng.normal(size=200)
+    const = np.where(folds == 0, 1.0, np.where(folds == 1, -1.0, np.where(folds == 2, 0.5, -0.5)))
+    truth = pd.DataFrame({"do": y, "water_body_type": "lake"})
+
+    pooled = MetricsReporter(targets=["do"]).report(truth, pd.DataFrame({"do": const}))
+    assert np.isfinite(pooled["spearman"].iloc[0])                       # the artifact, when folds are unknown
+    guarded = MetricsReporter(targets=["do"]).report(truth, pd.DataFrame({"do": const}), fold_labels=folds)
+    assert np.isnan(guarded["spearman"].iloc[0])
+
+    real = y * 0.6 + rng.normal(scale=0.5, size=200)
+    scored = MetricsReporter(targets=["do"]).report(truth, pd.DataFrame({"do": real}), fold_labels=folds)
+    assert scored["spearman"].iloc[0] > 0.5                              # a real model is unaffected

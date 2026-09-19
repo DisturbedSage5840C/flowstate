@@ -71,3 +71,44 @@ def test_validation_stats_match_hand_computation():
     s = stats(insitu, sat)
     assert s["n"] == 3 and s["bias_c"] == pytest.approx(2.0) and s["mae_c"] == pytest.approx(2.0)
     assert s["rmse_c"] == pytest.approx(np.sqrt((4 + 0 + 16) / 3), abs=0.01) and s["pearson_r"] > 0.95
+
+
+# ---------------------------------------------------------------------------
+# Open-Meteo rate limiting and the antecedent-rainfall lookup
+# ---------------------------------------------------------------------------
+
+def test_rate_limit_wait_matches_the_limit_that_was_actually_hit():
+    import datetime as dt
+    from src.data.weather import QuotaExhausted, rate_limit_wait
+
+    now = dt.datetime(2026, 9, 19, 17, 44, tzinfo=dt.timezone.utc)
+    # the live error is hourly, not daily; exponential backoff could never clear it
+    assert 900 < rate_limit_wait("Hourly API request limit exceeded. Please try again in the next hour.", 0, now) < 1000
+    assert rate_limit_wait("Minutely API request limit exceeded.", 0, now) == 2.0
+    assert rate_limit_wait("Minutely API request limit exceeded.", 3, now) == 16.0
+    assert rate_limit_wait("something else", 10, now) == 60.0                      # capped
+    with pytest.raises(QuotaExhausted, match="UTC midnight"):
+        rate_limit_wait("Daily API request limit exceeded.", 0, now)
+
+
+def test_antecedent_rainfall_uses_the_last_day_at_or_before_the_window_edge():
+    """A gap in the cache must not silently null the feature: reindex().ffill() returned NaN whenever the
+    exact window-edge day was missing, asof() correctly falls back to the previous day."""
+    from src.data.weather import antecedent_rainfall_features
+
+    rain = pd.DataFrame({"site": ["a"] * 4,
+                         "date": pd.to_datetime(["2020-01-01", "2020-01-02", "2020-01-04", "2020-01-05"]),
+                         "precip_mm": [1.0, 2.0, 3.0, 4.0]})
+    visits = pd.DataFrame({"site": ["a"], "date": [pd.Timestamp("2020-01-04")]})   # needs 2020-01-03, absent
+    out = antecedent_rainfall_features(visits, rain)
+    assert out["rain_3d_mm"].iloc[0] == pytest.approx(2.0)        # days 1-3 present in cache: 1+2, day 3 missing
+    assert out["rain_30d_mm"].iloc[0] == pytest.approx(3.0)       # everything before the visit
+    assert out.notna().all().all()
+
+
+def test_rainfall_features_are_nan_for_an_unknown_site():
+    from src.data.weather import antecedent_rainfall_features
+
+    rain = pd.DataFrame({"site": ["a"], "date": [pd.Timestamp("2020-01-01")], "precip_mm": [5.0]})
+    out = antecedent_rainfall_features(pd.DataFrame({"site": ["b"], "date": [pd.Timestamp("2020-02-01")]}), rain)
+    assert out.isna().all().all()

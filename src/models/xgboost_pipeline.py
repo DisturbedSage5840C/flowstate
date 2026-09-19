@@ -72,8 +72,10 @@ class WaterQualityXGB:
         Spatial CV folds used inside the Optuna objective.
     random_state : int
         Global RNG seed for reproducibility.
-    feature_cols : list[str]
-        Input feature columns (default: FEATURE_COLS).
+    feature_cols : list[str] | dict[str, list[str]]
+        Input feature columns. A dict maps target -> its own columns (see
+        src.models.schema.FEATURE_SETS: context features help BOD and hurt DO/turbidity, so one
+        shared list is measurably wrong); a plain list applies to every target.
     targets : list[str]
         Target parameters to model (default: chl_a, turbidity, do).
     """
@@ -94,6 +96,24 @@ class WaterQualityXGB:
         self.targets = targets or TARGET_COLS
         self._models: dict[str, xgb.XGBRegressor] = {}
         self._best_params: dict[str, dict] = {}
+
+    def _features_for(self, target: str) -> list[str]:
+        """Columns this target is modelled from (per-target when feature_cols is a dict)."""
+        if isinstance(self.feature_cols, dict):
+            if target not in self.feature_cols:
+                raise KeyError(f"no feature set for target {target!r}; have {sorted(self.feature_cols)}")
+            return list(self.feature_cols[target])
+        return list(self.feature_cols)
+
+    @property
+    def all_feature_cols(self) -> list[str]:
+        """Union across targets, in first-seen order (for dropna checks and callers needing one list)."""
+        if not isinstance(self.feature_cols, dict):
+            return list(self.feature_cols)
+        seen: dict[str, None] = {}
+        for cols in self.feature_cols.values():
+            seen.update(dict.fromkeys(cols))
+        return list(seen)
 
     # ------------------------------------------------------------------
     # Training
@@ -141,7 +161,8 @@ class WaterQualityXGB:
             best_rmse, best_params = self._tune(labelled, target, n_trials)
             # Refit on all labelled rows with best params (no early stopping without eval_set)
             model = self._build_model(best_params)
-            model.fit(labelled[self.feature_cols], self._to_model_scale(target, labelled[target].to_numpy()))
+            model.fit(labelled[self._features_for(target)],
+                      self._to_model_scale(target, labelled[target].to_numpy()))
             self._models[target] = model
             self._best_params[target] = best_params
             results[target] = best_rmse
@@ -173,7 +194,7 @@ class WaterQualityXGB:
             if target not in self._models:
                 preds[target] = np.full(len(df), np.nan)
                 continue
-            raw = self._from_model_scale(target, self._models[target].predict(df[self.feature_cols]))
+            raw = self._from_model_scale(target, self._models[target].predict(df[self._features_for(target)]))
             preds[target] = self._clip(raw, target)
         return pd.DataFrame(preds, index=df.index)
 
@@ -261,11 +282,11 @@ class WaterQualityXGB:
             raise RuntimeError("No tuned params available. Call .train() first.")
         skf = SpatialKFold(n_folds=self.n_folds, random_state=self.random_state)
         splits = list(skf.split(df))
-        X = df[self.feature_cols]
         oof = {target: np.full(len(df), np.nan) for target in self.targets}
         for target in self.targets:
             if target not in self._best_params or target not in df.columns:
                 continue
+            X = df[self._features_for(target)]
             y = df[target]
             params = self._best_params[target]
             for train_idx, val_idx in splits:
@@ -311,7 +332,7 @@ class WaterQualityXGB:
         """Run Optuna on spatial-CV RMSE for a single target."""
         skf = SpatialKFold(n_folds=self.n_folds, random_state=self.random_state)
         splits = list(skf.split(df))
-        X = df[self.feature_cols]
+        X = df[self._features_for(target)]
         y = pd.Series(self._to_model_scale(target, df[target].to_numpy()), index=df.index)   # objective in model scale
 
         def objective(trial: optuna.Trial) -> float:

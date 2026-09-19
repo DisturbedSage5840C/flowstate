@@ -58,12 +58,21 @@ def _safe_mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(mean_absolute_error(y_true, y_pred))
 
 
-def _safe_spearman(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+def _safe_spearman(y_true: np.ndarray, y_pred: np.ndarray, groups: Optional[np.ndarray] = None) -> float:
     """Rank correlation: the honest headline number for heavy-tailed targets, where raw R2
-    can be near-zero/negative even when the model recovers useful relative ordering."""
+    can be near-zero/negative even when the model recovers useful relative ordering.
+
+    ``groups`` (fold labels) guards against a specific artifact: a "predict the training mean" baseline is
+    constant *within* each fold, so it carries no within-fold ranking information, yet pooling folds with
+    different constants produced a confident-looking -0.2 to -0.38 that only measured between-fold offsets.
+    When the prediction is constant inside every group, there is no rank signal and this returns NaN.
+    """
     y_true, y_pred = _drop_nan_targets(y_true, y_pred)
     if len(y_true) < 2 or np.std(y_true) == 0 or np.std(y_pred) == 0:
         return float("nan")
+    if groups is not None and len(groups) == len(y_pred):
+        if all(np.std(y_pred[groups == g]) == 0 for g in np.unique(groups)):
+            return float("nan")
     return float(spearmanr(y_true, y_pred).correlation)
 
 
@@ -94,6 +103,7 @@ class MetricsReporter:
         self,
         df_true: pd.DataFrame,
         df_pred: pd.DataFrame,
+        fold_labels: Optional[np.ndarray] = None,
     ) -> pd.DataFrame:
         """Return a tidy DataFrame with rows = (target, water_body_type).
 
@@ -119,7 +129,7 @@ class MetricsReporter:
 
             # ── Overall row ───────────────────────────────────────────
             rows.append(
-                self._row(target, "overall", y_true_all, y_pred_all)
+                self._row(target, "overall", y_true_all, y_pred_all, fold_labels)
             )
 
             # ── Per water-body type ───────────────────────────────────
@@ -133,6 +143,7 @@ class MetricsReporter:
                         wbt,
                         y_true_all[mask.values],
                         y_pred_all[mask.values],
+                        None if fold_labels is None else np.asarray(fold_labels)[mask.values],
                     )
                 )
 
@@ -178,6 +189,7 @@ class MetricsReporter:
         wbt: str,
         y_true: np.ndarray,
         y_pred: np.ndarray,
+        fold_labels: Optional[np.ndarray] = None,
     ) -> dict:
         from src.models.schema import LOG_TARGETS
 
@@ -188,7 +200,7 @@ class MetricsReporter:
             "R2": _safe_r2(y_true, y_pred),
             "RMSE": _rmse(y_true, y_pred),
             "MAE": _safe_mae(y_true, y_pred),
-            "spearman": _safe_spearman(y_true, y_pred),
+            "spearman": _safe_spearman(y_true, y_pred, fold_labels),
         }
         # Heavy-tailed targets: raw-scale R2/RMSE are dominated by a few extreme values, so also report R2 on the
         # log1p scale (NaN for other targets).

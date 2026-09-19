@@ -79,10 +79,12 @@ def render(bundle: RealBundle) -> None:
               help=f"Only visits where every criterion of the assigned class was measured ({n_complete:,} of "
                    f"{len(df):,} visits). Coliform is missing for most visits, so class A-C cannot be confirmed for the rest.")
 
-    tab_map, tab_station, tab_aoi, tab_perf, tab_shap, tab_data = st.tabs(
-        ["🗺️ Map", "📍 Station", "🛰️ Any-AOI map", "📊 Model performance", "🔍 Interpretability",
-         "🧾 Data & provenance"])
+    tab_screen, tab_map, tab_station, tab_aoi, tab_perf, tab_shap, tab_data = st.tabs(
+        ["🚩 Screening", "🗺️ Map", "📍 Station", "🛰️ Any-AOI map", "📊 Model performance",
+         "🔍 Interpretability", "🧾 Data & provenance"])
 
+    with tab_screen:
+        _screening_tab(bundle)
     with tab_map:
         _map_tab(shown, parameter, source)
     with tab_station:
@@ -155,6 +157,49 @@ def _station_tab(bundle: RealBundle, df: pd.DataFrame) -> None:
                         width="stretch")
     cols = ["date", "do", "bod", "turbidity", "ph", "cpcb_class", "wqi", "wqi_tier", "day_diff", "n_water_px"]
     st.dataframe(g[[c for c in cols if c in g.columns]].reset_index(drop=True), width="stretch")
+
+
+def _screening_tab(bundle: RealBundle) -> None:
+    """Primary deliverable: rank stations by the probability of breaching a regulatory limit."""
+    if not bundle.screening:
+        st.info("No screening results yet. Run `python -m scripts.train_screening`.")
+        return
+    st.markdown(
+        "**What this is.** Predicting an exact concentration from reflectance does not work here (see *Model "
+        "performance*): 85-100 % of each parameter's variance is between stations, and validation holds whole "
+        "stations out. Ranking stations by how likely they are to breach a limit is a different question, and it "
+        "does work well enough to be useful for deciding where to send an inspector.")
+
+    rows = []
+    for name, r in bundle.screening.get("targets", {}).items():
+        if "roc_auc" not in r:
+            continue
+        rows.append({"Check": r.get("description", name), "n": r["n"], "Base rate": r["base_rate"],
+                     "AUC": r["roc_auc"], "Precision @ top 10%": r["precision_at_k"]["top_10pct"],
+                     "Lift @ top 10%": r["lift_at_k"]["top_10pct"]})
+    if rows:
+        table = pd.DataFrame(rows).sort_values("AUC", ascending=False)
+        st.dataframe(table.style.format({"Base rate": "{:.1%}", "AUC": "{:.3f}",
+                                         "Precision @ top 10%": "{:.1%}", "Lift @ top 10%": "{:.1f}x"}),
+                     width="stretch")
+        best = table.iloc[0]
+        st.caption(
+            f"Read the best row as: of the {int(best['n']):,} visits, {best['Base rate']:.0%} actually breach. "
+            f"Inspecting the model's top 10 % instead finds a breach {best['Precision @ top 10%']:.0%} of the time "
+            f"- {best['Lift @ top 10%']:.1f}x better than inspecting at random. AUC 0.5 would be chance.")
+
+    if bundle.shortlist is not None and len(bundle.shortlist):
+        st.markdown("#### Stations to inspect first")
+        target = bundle.screening.get("shortlist_target", "")
+        st.caption(f"Ranked by mean out-of-fold breach probability for **{target}** - each station was scored by a "
+                   "model that never trained on it. `actually_breached` is the measured outcome, shown so the "
+                   "ranking can be checked rather than trusted.")
+        top_n = st.slider("Stations to show", 10, 200, 25, 5, key="rv_shortlist_n")
+        show = bundle.shortlist.head(top_n).copy()
+        fmt = {c: "{:.2f}" for c in ("breach_probability", "actually_breached") if c in show.columns}
+        st.dataframe(show.style.format(fmt), width="stretch")
+        st.download_button("Download the full shortlist (CSV)", bundle.shortlist.to_csv(index=False),
+                           file_name="screening_shortlist.csv", mime="text/csv", key="rv_shortlist_dl")
 
 
 AOI_LAYER_LABELS = {
@@ -246,6 +291,12 @@ def _performance_tab(bundle: RealBundle) -> None:
         return
     st.markdown("Out-of-fold, site-blocked spatial cross-validation. **R² ≤ 0 means no better than predicting "
                 "the training average**; the baselines are scored on the same folds.")
+    skill = (bundle.summary_metrics or {}).get("skill", {})
+    if skill:
+        st.warning("**Per-parameter verdict** (written by the training run, not by hand):\n\n"
+                   + "\n\n".join(f"- **{t.upper()}** — {note}" for t, note in skill.items()), icon="⚠️")
+    st.caption("A constant baseline has no within-fold ranking, so its Spearman is reported as blank rather than "
+               "as a number that only reflects differences between folds.")
     if bundle.comparison is not None and len(bundle.comparison):
         st.markdown("#### Production choice per target")
         st.caption("XGBoost is the default; the DL model is chosen only when its out-of-fold RMSE is lower by more than 5%. "

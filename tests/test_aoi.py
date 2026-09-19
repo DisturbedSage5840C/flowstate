@@ -96,3 +96,38 @@ def test_fetch_returns_none_when_nothing_is_within_tolerance_or_clear():
 def test_predict_aoi_reports_missing_models(tmp_path):
     with pytest.raises(aoi.AOIError, match="no trained models"):
         aoi.predict_aoi(12.9, 77.6, "2020-01-29", models_dir=tmp_path)
+
+
+def test_context_columns_added_for_the_bod_model():
+    from src.data.aoi import add_context_columns
+    from src.models.schema import FEATURE_SETS
+
+    feats = pd.DataFrame({"B4": [0.05, 0.06], "ndci": [0.1, 0.2]})
+    out = add_context_columns(feats, 28.61, 77.26, "2020-07-15", water_body_type="river")   # Delhi, monsoon
+    assert out["is_river"].tolist() == [1, 1] and out["is_lake"].tolist() == [0, 0]
+    assert out["is_monsoon"].tolist() == [1, 1] and out["is_winter"].tolist() == [0, 0]
+    assert out["dist_nearest_city_km"].iloc[0] < 30                  # Delhi station is next to a major city
+    assert (out["urban_load_index"] > 0).all()
+    assert not set(FEATURE_SETS["bod"]) - set(out.columns) - {"B2", "B3", "B5", "B6", "B8", "B11",
+                                                              "bdm2", "bdm3", "red_green", "nir"}
+    assert "date" not in out.columns and len(out) == 2
+
+
+def test_predict_fn_reports_missing_columns_instead_of_failing_obscurely(tmp_path, monkeypatch):
+    import json
+    from src.data import aoi as aoi_mod
+
+    (tmp_path / "do_xgb.json").write_text("{}")
+    (tmp_path / "config.json").write_text(json.dumps({"feature_cols": {"do": ["B4", "made_up_column"]},
+                                                      "targets": ["do"], "log_targets": []}))
+
+    class FakeModel:
+        all_feature_cols = ["B4", "made_up_column"]
+
+        def predict(self, df):
+            raise AssertionError("should not be reached")
+
+    monkeypatch.setattr("src.models.xgboost_pipeline.WaterQualityXGB.load", classmethod(lambda cls, d: FakeModel()))
+    fn = aoi_mod.make_predict_fn(tmp_path)
+    with pytest.raises(aoi_mod.AOIError, match="made_up_column"):
+        fn(pd.DataFrame({"B4": [0.05]}))

@@ -85,8 +85,37 @@ def write_wgs84(array: np.ndarray, transform, crs: str, dest: Path | str, nodata
     return dest
 
 
-def make_predict_fn(models_dir: Path | str = REAL_MODELS) -> Callable[[pd.DataFrame], pd.DataFrame]:
-    """XGBoost predictions (DO, BOD, turbidity) plus a WQI computed from those predictions only."""
+def add_context_columns(feats: pd.DataFrame, lat: float, lon: float, date, water_body_type: str = "unknown"
+                        ) -> pd.DataFrame:
+    """Add the non-spectral model inputs to a per-pixel feature frame.
+
+    The raster path only produces reflectance and spectral indices, but the BOD model also uses water-body
+    type, season and urban proximity (src.models.schema.FEATURE_SETS), so without these a BOD layer would
+    fail with a missing-column error. Urban proximity is evaluated at the AOI centre rather than per pixel:
+    the gravity index varies over tens of kilometres, so it is effectively constant across a ~5 km window.
+    """
+    from src.data.city_proximity import urban_proxy_features
+    from src.models.schema import add_season_onehot, add_water_body_onehot
+
+    out = feats.copy()
+    out["water_body_type"] = water_body_type
+    out = add_water_body_onehot(out)
+    out["date"] = pd.Timestamp(date)
+    out = add_season_onehot(out)
+    out = out.drop(columns=["date"])
+    urban = urban_proxy_features(pd.Series([lat]), pd.Series([lon])).iloc[0]
+    for col, value in urban.items():
+        out[col] = value
+    return out
+
+
+def make_predict_fn(models_dir: Path | str = REAL_MODELS, lat: float | None = None, lon: float | None = None,
+                    date=None, water_body_type: str = "unknown") -> Callable[[pd.DataFrame], pd.DataFrame]:
+    """XGBoost predictions (DO, BOD, turbidity) plus a WQI computed from those predictions only.
+
+    ``lat``/``lon``/``date`` supply the context features the BOD model needs; omit them only when the saved
+    models are spectral-only.
+    """
     from src.models.xgboost_pipeline import WaterQualityXGB
 
     models_dir = Path(models_dir)
@@ -95,6 +124,11 @@ def make_predict_fn(models_dir: Path | str = REAL_MODELS) -> Callable[[pd.DataFr
     model = WaterQualityXGB.load(models_dir)
 
     def predict(feats: pd.DataFrame) -> pd.DataFrame:
+        if lat is not None and lon is not None and date is not None:
+            feats = add_context_columns(feats, lat, lon, date, water_body_type)
+        missing = [c for c in model.all_feature_cols if c not in feats.columns]
+        if missing:
+            raise AOIError(f"the trained models need columns the AOI pipeline did not supply: {missing}")
         preds = model.predict(feats)
         preds["wqi"] = compute_wqi_dataframe(preds[[c for c in ("do", "bod", "turbidity") if c in preds]])["wqi"]
         return preds
@@ -127,9 +161,9 @@ def predict_aoi(lat: float, lon: float, date: dt.date | str, models_dir: Path | 
                 out_dir: Path | str = AOI_DIR, half_size_m: float = 2000.0, tolerance_days: int = 5,
                 smooth_px: int = 3) -> dict:
     """End to end: find a scene, mask water, predict, write GeoTIFFs. Raises AOIError with a readable reason."""
-    predict_fn = make_predict_fn(models_dir)
     scene = fetch_aoi_scene(lat, lon, date, half_size_m, tolerance_days)
     if scene is None:
         raise AOIError(f"no clear Sentinel-2 scene within ±{tolerance_days} days of {date} at ({lat:.4f}, {lon:.4f})")
+    predict_fn = make_predict_fn(models_dir, lat=lat, lon=lon, date=scene.scene_date)
     name = f"aoi_{lat:.4f}_{lon:.4f}_{scene.scene_date}"
     return predict_aoi_from_scene(scene, predict_fn, out_dir, name, smooth_px)

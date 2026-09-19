@@ -1,15 +1,17 @@
 """Add season/urban-proxy/rainfall context features to the already-built real training tables.
 
-    python -m scripts.backfill_context_features
+    python -m scripts.backfill_context_features [--offline] [--all]
 
-This machine has no rasterio/earthengine, so the raw satellite-extraction pipeline
-(scripts/build_real_training_table.py) cannot be rerun here; instead this backfills the new
-non-satellite features (src.models.schema.SEASONS/RAINFALL_COLS/URBAN_PROXY_COLS) directly onto
-the already-built parquets, the same way is_river/is_lake/turbidity_calibrated were added earlier.
-Idempotent: safe to rerun (rainfall is cached to data/interim/rainfall_daily.parquet by site, so a
-rerun only fetches sites not already cached).
+Backfills the non-satellite features (src.models.schema.SEASONS/RAINFALL_COLS/URBAN_PROXY_COLS) directly onto
+the already-built parquets, without rerunning the satellite extraction.
+
+Idempotent and, importantly, **non-destructive for rainfall**: the daily-rainfall cache lives in
+data/interim/ (gitignored), so a clone that has the tables but not the cache would otherwise recompute every
+rainfall feature from an empty cache and wipe the coverage already in the parquet. Instead only the visits
+whose rainfall is still missing are fetched and filled; existing values are kept. ``--all`` forces a full
+recompute (use after changing the rainfall feature definition).
 """
-import sys
+import argparse
 
 import pandas as pd
 
@@ -23,42 +25,67 @@ TABLE_SMALL = nwdp.ROOT / "data" / "processed" / "train_real.parquet"
 RAINFALL_CACHE = nwdp.ROOT / "data" / "interim" / "rainfall_daily.parquet"
 
 
-def add_context_features(df: pd.DataFrame, rainfall_daily: pd.DataFrame) -> pd.DataFrame:
+def missing_rainfall_mask(df: pd.DataFrame) -> pd.Series:
+    """Rows whose rainfall features still need fetching (all of them, if the columns do not exist yet)."""
+    if not all(c in df.columns for c in RAINFALL_COLS):
+        return pd.Series(True, index=df.index)
+    return df[RAINFALL_COLS].isna().any(axis=1)
+
+
+def add_context_features(df: pd.DataFrame, rainfall_daily: pd.DataFrame, refresh_all: bool = False) -> pd.DataFrame:
+    """Season + urban proxy (always recomputed; they are deterministic from date/lat/lon) and rainfall
+    (only where missing, unless ``refresh_all``)."""
     df = add_season_onehot(df)
     urban = urban_proxy_features(df["lat"], df["lon"])
     df = df.drop(columns=[c for c in urban.columns if c in df.columns]).join(urban)
-    rain_feats = antecedent_rainfall_features(df[["site", "date"]], rainfall_daily)
+
     for c in RAINFALL_COLS:
-        df[c] = rain_feats[c].to_numpy()
+        if c not in df.columns:
+            df[c] = float("nan")
+    target = pd.Series(True, index=df.index) if refresh_all else missing_rainfall_mask(df)
+    if not target.any() or not len(rainfall_daily):
+        return df
+    feats = antecedent_rainfall_features(df.loc[target, ["site", "date"]], rainfall_daily)
+    for c in RAINFALL_COLS:
+        new = feats[c]
+        df.loc[target, c] = new.where(new.notna(), df.loc[target, c]) if not refresh_all else new
     return df
 
 
 def main():
-    offline = "--offline" in sys.argv
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--offline", action="store_true", help="use only the cached rainfall on disk, no network calls")
+    ap.add_argument("--all", action="store_true", dest="refresh_all",
+                    help="recompute rainfall for every row (default: only rows still missing it)")
+    args = ap.parse_args()
+
     big = pd.read_parquet(TABLE_LARGE)
     big["date"] = pd.to_datetime(big["date"])
 
-    sites = big[["site", "lat", "lon"]].drop_duplicates(subset="site")
-    windows = compute_rainfall_windows(big[["site", "date"]])
-    print(f"rainfall windows: {len(windows)} (vs {sites['site'].nunique()} sites x full date range previously)")
+    need = pd.Series(True, index=big.index) if args.refresh_all else missing_rainfall_mask(big)
+    visits = big.loc[need, ["site", "date"]]
+    windows = compute_rainfall_windows(visits)
+    days = int(sum((w.end_date - w.start_date).days + 1 for w in windows.itertuples()))
+    print(f"rainfall still needed for {int(need.sum())} of {len(big)} rows "
+          f"({visits['site'].nunique()} sites) -> {len(windows)} windows, {days:,} site-days "
+          f"(~{days / 14:,.0f} Open-Meteo call-units; free tier allows 6,000/hour, 10,000/day)")
+
     RAINFALL_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    if offline:
-        print("--offline: using only the cached rainfall data already on disk, no fetch attempted")
-    rainfall_daily = fetch_daily_rainfall(sites, windows, cache_path=RAINFALL_CACHE, offline=offline)
-    print(f"rainfall: {rainfall_daily['site'].nunique()} sites, {len(rainfall_daily)} site-days")
+    if args.offline:
+        print("--offline: using only the cached rainfall already on disk, no fetch attempted")
+    sites = big.loc[need, ["site", "lat", "lon"]].drop_duplicates(subset="site")
+    rainfall_daily = fetch_daily_rainfall(sites, windows, cache_path=RAINFALL_CACHE, offline=args.offline)
+    print(f"rainfall cache: {rainfall_daily['site'].nunique()} sites, {len(rainfall_daily):,} site-days")
 
-    big = add_context_features(big, rainfall_daily)
-    big.to_parquet(TABLE_LARGE)
-    print(f"wrote {TABLE_LARGE} ({len(big)} rows)")
-    for c in RAINFALL_COLS:
-        print(f"  {c}: {big[c].notna().mean():.1%} non-null, median {big[c].median():.2f}")
-
-    if TABLE_SMALL.exists():
-        small = pd.read_parquet(TABLE_SMALL)
-        small["date"] = pd.to_datetime(small["date"])
-        small = add_context_features(small, rainfall_daily)
-        small.to_parquet(TABLE_SMALL)
-        print(f"wrote {TABLE_SMALL} ({len(small)} rows)")
+    for path in (TABLE_LARGE, TABLE_SMALL):
+        if not path.exists():
+            continue
+        df = pd.read_parquet(path)
+        df["date"] = pd.to_datetime(df["date"])
+        df = add_context_features(df, rainfall_daily, refresh_all=args.refresh_all)
+        df.to_parquet(path)
+        cov = {c: f"{df[c].notna().mean():.1%}" for c in RAINFALL_COLS}
+        print(f"wrote {path.name} ({len(df)} rows) | rainfall coverage {cov}")
 
 
 if __name__ == "__main__":
