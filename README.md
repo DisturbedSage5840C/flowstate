@@ -17,6 +17,86 @@ station's water likely polluted, for an inspector to prioritise" — out-of-fold
 regression result in the project). See `AQUA_SENSE_PROJECT_PLAN.md` §11 and `reports/real/screening_metrics.json`
 for the full evidence.
 
+## In plain terms
+
+Government inspectors physically visit rivers and lakes, dip a bottle in the water, and send it to a lab to
+measure things like dissolved oxygen and sewage content (BOD). That's accurate, but it only covers ~3,100 spots
+in India and each spot gets checked a few times a year at most — most of the country's water is never checked.
+
+Satellites photograph the same water bodies every few days, for free, everywhere. The question this project asks
+is: **can a satellite photo tell us which water is polluted, without a physical visit?**
+
+The honest answer turned out to be nuanced, and the project is built around that honesty rather than around a
+sales pitch:
+- **"Give me the exact number" (e.g. "BOD is 4.2 mg/L") — mostly no.** Sewage and dissolved oxygen don't change
+  the colour of water in a way a camera can reliably pick up; the water's *history* (what's upstream, whose
+  sewage drains in) matters far more than what it looks like on one day.
+- **"Tell me if this spot is probably polluted, so I know where to send an inspector first" — yes, usefully.**
+  That's a coarser, easier question, and the satellite answers it right about 3 times out of 4 (AUC ≈ 0.75) —
+  good enough to turn "check 3,100 random spots" into "check these 500 first."
+
+So Aqua-Sense's real deliverable is a **triage tool**: a ranked list of which water bodies most likely need a
+human to go check, built entirely from free satellite images plus government lab data used to teach the model
+what "polluted" looks like from space. It does not replace lab testing — it tells you where to point it.
+
+## How it works (system architecture)
+
+```mermaid
+flowchart TD
+    subgraph Sources["📡 Data sources (free, public, no login)"]
+        CPCB["CPCB water-quality labs\n~80,000 lab visits\nDO · BOD · turbidity · pH ..."]
+        S2["Sentinel-2 satellite\nreflectance images\n(via Planetary Computer / Earth Engine)"]
+        CTX["Context data\ncity locations · season\n(rainfall: fetched, tested, unused)"]
+    end
+
+    subgraph Build["🔧 Build the training table (one row per lab visit)"]
+        MATCH["Match each lab visit to the\nnearest clear satellite photo\n(±3 days, same location)"]
+        FEAT["Turn raw pixels into features:\ncolour-index bands, water-body type,\nseason, distance to nearest city"]
+    end
+
+    subgraph Models["🧠 Two kinds of model, same data"]
+        SCREEN["Screening classifiers\n'is BOD probably above the\nsafe limit?' — yes/no"]
+        REG["Regression models\n'what is the exact BOD value?'\n(kept, but flagged as low-skill)"]
+    end
+
+    subgraph Output["📊 What comes out"]
+        RANK["Ranked risk list\nAUC ≈ 0.75 — genuinely useful"]
+        NUM["Estimated concentrations\nnear-zero skill — shown honestly, not hidden"]
+        WQI["Water Quality Index (0-100)\n+ official CPCB class (A-E)"]
+    end
+
+    DASH["🖥️ Streamlit dashboard\nmap · screening shortlist · any-location predictor"]
+
+    CPCB --> MATCH
+    S2 --> MATCH
+    CTX --> FEAT
+    MATCH --> FEAT
+    FEAT --> SCREEN
+    FEAT --> REG
+    SCREEN --> RANK
+    REG --> NUM
+    RANK --> WQI
+    NUM --> WQI
+    RANK --> DASH
+    NUM --> DASH
+    WQI --> DASH
+```
+
+**Why it's built this way, step by step:**
+
+1. **Match, don't assume.** A lab visit and a satellite photo are only paired up if they're within 3 days of
+   each other at the same spot — no interpolation, no guessing what the water looked like.
+2. **Features, not raw pixels.** Rather than feeding raw colour bands straight into a model, the pipeline
+   computes indices known to relate to water quality (e.g. NDCI, red/green ratio), plus non-satellite context
+   (season, water-body type, distance to the nearest city as a proxy for sewage/industrial load) — but *only*
+   for the targets where that context measurably helps (see `src/models/schema.py::FEATURE_SETS`).
+3. **Two models per question, honestly scored.** Every model is validated with *site-blocked* cross-validation
+   — it's never tested on a water body it already saw during training — and every score is compared against a
+   "just predict the average" baseline on the same split, so a model can't look good by accident.
+4. **The dashboard shows both, labelled.** The screening shortlist is front-and-centre; the exact-concentration
+   numbers are still shown (useful as a rough signal, and DO/BOD/turbidity have real physical meaning), but
+   carry an explicit "no demonstrated skill" flag where that's true rather than a falsely confident number.
+
 ## Team
 - **Aadi (P1)** — Geospatial / Data Engineer
 - **Marutey (P2)** — Data Scientist
