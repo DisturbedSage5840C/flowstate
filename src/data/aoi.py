@@ -86,7 +86,14 @@ def write_wgs84(array: np.ndarray, transform, crs: str, dest: Path | str, nodata
 
 
 def make_predict_fn(models_dir: Path | str = REAL_MODELS) -> Callable[[pd.DataFrame], pd.DataFrame]:
-    """XGBoost predictions (DO, BOD, turbidity) plus a WQI computed from those predictions only."""
+    """XGBoost predictions (DO, BOD, turbidity) plus a WQI computed from those predictions only.
+
+    Checks for and loads the model eagerly (raises AOIError with no network call if it is missing) so
+    ``predict_aoi`` can fail fast before fetching a scene. The returned function only has spectral
+    features to work with; wrap it with ``with_context`` once a scene (and its lat/lon/date) is known,
+    since the BOD/turbidity models also need water-body-type/season/urban-proximity columns
+    (src.models.schema.FEATURE_SETS) that a per-pixel spectral frame alone cannot supply.
+    """
     from src.models.xgboost_pipeline import WaterQualityXGB
 
     models_dir = Path(models_dir)
@@ -98,6 +105,33 @@ def make_predict_fn(models_dir: Path | str = REAL_MODELS) -> Callable[[pd.DataFr
         preds = model.predict(feats)
         preds["wqi"] = compute_wqi_dataframe(preds[[c for c in ("do", "bod", "turbidity") if c in preds]])["wqi"]
         return preds
+
+    return predict
+
+
+def with_context(predict_fn: Callable[[pd.DataFrame], pd.DataFrame], lat: float, lon: float,
+                 date: dt.date | str) -> Callable[[pd.DataFrame], pd.DataFrame]:
+    """Wrap a predict_fn so every pixel also carries the non-spectral context features a BOD/turbidity
+    model needs: per-pixel urban proximity and season, both computed once from the scene's own
+    lat/lon/date (one Sentinel-2 window is small enough, and covers one date, so every pixel in it
+    shares the same value) via the same helpers the training table uses
+    (src.data.city_proximity.urban_proxy_features, src.models.schema.add_season_onehot). Water-body
+    type is not knowable for an arbitrary AOI point and is left at the all-zero "unknown" baseline,
+    the same convention src.models.schema.add_water_body_onehot uses for the training table.
+    """
+    from src.data.city_proximity import urban_proxy_features
+    from src.models.schema import TYPE_COLS, add_season_onehot
+
+    urban = urban_proxy_features(pd.Series([lat]), pd.Series([lon])).iloc[0].to_dict()
+    season_row = add_season_onehot(pd.DataFrame({"date": [pd.Timestamp(date)]})).iloc[0]
+    context = {**urban, **{c: int(season_row[c]) for c in ("is_winter", "is_summer", "is_monsoon")},
+              **{c: 0 for c in TYPE_COLS}}
+
+    def predict(feats: pd.DataFrame) -> pd.DataFrame:
+        feats = feats.copy()
+        for col, val in context.items():
+            feats[col] = val
+        return predict_fn(feats)
 
     return predict
 
@@ -127,9 +161,10 @@ def predict_aoi(lat: float, lon: float, date: dt.date | str, models_dir: Path | 
                 out_dir: Path | str = AOI_DIR, half_size_m: float = 2000.0, tolerance_days: int = 5,
                 smooth_px: int = 3) -> dict:
     """End to end: find a scene, mask water, predict, write GeoTIFFs. Raises AOIError with a readable reason."""
-    predict_fn = make_predict_fn(models_dir)
+    predict_fn = make_predict_fn(models_dir)                    # fails fast (no network) if models are missing
     scene = fetch_aoi_scene(lat, lon, date, half_size_m, tolerance_days)
     if scene is None:
         raise AOIError(f"no clear Sentinel-2 scene within ±{tolerance_days} days of {date} at ({lat:.4f}, {lon:.4f})")
+    predict_fn = with_context(predict_fn, scene.lat, scene.lon, scene.scene_date)
     name = f"aoi_{lat:.4f}_{lon:.4f}_{scene.scene_date}"
     return predict_aoi_from_scene(scene, predict_fn, out_dir, name, smooth_px)

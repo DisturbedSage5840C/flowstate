@@ -88,6 +88,30 @@ Loaded: ~84,000 visits at ~4,000 stations in 36 states/UTs (2019-2024), of which
   `train_real.parquet` follows the seasonal cycle but is **not an accurate water temperature**; an error of 8–10 °C changes
   the oxygen-saturation value by about 2 mg/L. Treat it as a seasonal indicator only.
 
+### Open-Meteo Historical Weather API (rainfall) — fetched, validated, then dropped from every feature set
+- `https://archive-api.open-meteo.com/v1/archive`, no key required. ERA5/ERA5-Land reanalysis at ~9–25 km
+  resolution — coarser than the station location, and a model reanalysis, not a rain gauge. Code: `src/data/weather.py`.
+- Fetched only the ~35-day antecedent window before each real visit (`compute_rainfall_windows`), not each
+  site's full multi-year span, cutting requested days by ~8x. Two bugs found and fixed while finishing this
+  fetch: the free tier's actual limit is *hourly* ("Hourly API request limit exceeded"), not daily as first
+  assumed, so the retry logic now parses the 429 body and sleeps to the next UTC-hour boundary instead of a
+  fixed backoff that could never clear an hourly window; and `antecedent_rainfall_features` silently returned
+  NaN whenever the exact visit-minus-1-day date was missing from the cache (a `reindex([end]).ffill()` on a
+  single-element frame can never forward-fill), fixed with `.asof()`. Both fixes are code-complete and unit
+  tested (`tests/test_weather.py`), but the backfill itself is only **68.4 % complete**
+  (`rain_3d_mm/7d_mm/14d_mm/30d_mm` non-null in both parquets) -- outbound access to
+  `archive-api.open-meteo.com` is blocked (403) in the sandbox this rework was done in, so
+  `python -m scripts.backfill_context_features` (no `--offline`) could not be run to completion here. It
+  needs re-running from an environment with real network access to reach the ~100 % coverage the fixes now
+  make possible; the visits it would still fill in are unaffected either way, since rainfall is wired into no
+  feature set (see below).
+- **Result: dropped from every model anyway.** Clean ablations (identical rows, identical folds) on
+  `train_real_large.parquet` show rainfall adds nothing once urban proximity is already in the feature set
+  (BOD: +urban alone +0.121 R2, +rainfall on top of that +0.00), and actively hurts DO (−0.079 R2) and
+  turbidity (−0.158 R2) the same way urban proximity does — see `AQUA_SENSE_PROJECT_PLAN.md` section 11 and
+  `reports/real/metrics_summary.json`. The columns stay in the parquets as data (for anyone who wants to
+  re-test them) but are wired into no feature set (`src/models/schema.py::FEATURE_SETS`).
+
 ### Sources reviewed and NOT used
 | Source | Verdict |
 |---|---|
@@ -126,9 +150,21 @@ buffer radius is 500 m (as in the project plan). Only visits with a clear scene 
   WQI-tier classifier (`src/models/tier_classifier.py`) as a leakage-free secondary deliverable (OOF accuracy 0.29 vs
   0.27 majority-class baseline). None of this raises raw out-of-fold R² above zero for DO/BOD/turbidity — that ceiling
   is real, not a fixable defect in the code.
+- **2026-09-19 evidence-driven rework** (`AQUA_SENSE_PROJECT_PLAN.md` section 11): a variance decomposition
+  found 85–100 % of every target's variance is *between-station*, not within — a never-seen station's level
+  is mostly set by local sewage/industry, which reflectance cannot see, so site-blocked CV was always going
+  to sit near zero for the row-level regressions; an oracle that just knows a station's own mean reaches R²
+  0.61 (DO) / 0.79 (BOD) / 0.49 (turbidity), confirming the signal lives in station identity. Per-target
+  feature sets replaced the single pooled list (context features *hurt* DO and turbidity, help only BOD).
+  The one place the data does show real, useful skill is a **binary pollution screen**: BOD>3 mg/L (CPCB
+  Class C limit) AUC 0.755, DO<4 mg/L AUC 0.718, CPCB-polluted AUC 0.732 (`reports/real/screening_metrics.json`)
+  — now the headline deliverable, with row-level regression kept as a secondary, flagged result. A learning
+  curve on BOD>3 (AUC 0.743 at 25 % of stations → 0.755 at 100 %) shows extracting the remaining stations
+  would not meaningfully change this.
 
 ## 5. Disclosure text for the pitch
 > "Labels are CPCB in-situ grab-sample measurements (DO, BOD, turbidity) from the National Water Data Portal, matched
-> to Sentinel-2 L2A reflectance within ±3 days. Chlorophyll-a has no ground truth and is shown only as an index. Skill is
-> reported out-of-fold on site-blocked spatial folds next to a 'predict the average' baseline; it is currently low, and we
-> say so."
+> to Sentinel-2 L2A reflectance within ±3 days. Chlorophyll-a has no ground truth and is shown only as an index. The
+> headline result is a binary pollution screen (e.g. BOD above the CPCB Class C limit), out-of-fold AUC ~0.75 — a
+> decision an inspector can act on. Exact DO/BOD/turbidity concentrations cannot be recovered from reflectance alone
+> (DO and BOD are not optically active); we report that honestly rather than oversell a per-visit number."

@@ -31,6 +31,7 @@ class RealBundle:
     validation: dict = field(default_factory=dict)    # reports/real/empirical_formula_validation.json
     comparison: pd.DataFrame | None = None            # reports/real/model_comparison.csv
     dl_summary: dict = field(default_factory=dict)    # reports/real/dl_summary.json
+    screening: dict = field(default_factory=dict)     # reports/real/screening_metrics.json (headline deliverable)
     has_predictions: bool = False                     # XGBoost out-of-fold predictions ({target}_pred)
     has_dl_predictions: bool = False                  # DL out-of-fold predictions ({target}_pred_dl)
 
@@ -67,6 +68,12 @@ def load_real(root: Path = ROOT) -> RealBundle | None:
         table = table.merge(dl_oof, on=["site", "date"], how="left")
         has_dl = any(f"{t}_pred_dl" in table.columns for t in TARGETS)
 
+    screening_oof_path = real_dir / "screening_oof.parquet"
+    if screening_oof_path.exists():
+        screening_oof = pd.read_parquet(screening_oof_path)
+        screening_oof["date"] = pd.to_datetime(screening_oof["date"])
+        table = table.merge(screening_oof, on=["site", "date"], how="left")
+
     frames = []
     for name in ("metrics_table.csv", "dl_metrics_table.csv"):
         path = real_dir / name
@@ -83,6 +90,7 @@ def load_real(root: Path = ROOT) -> RealBundle | None:
         validation=read_json("empirical_formula_validation.json"),
         comparison=pd.read_csv(comparison_path) if comparison_path.exists() else None,
         dl_summary=read_json("dl_summary.json"),
+        screening=read_json("screening_metrics.json"),
         has_predictions=has_preds,
         has_dl_predictions=has_dl,
     )

@@ -245,4 +245,47 @@ If a model is not clearly better by Hour 12, ship XGBoost as production and pres
 | Kaggle datasets | Ganga/Sangam used only to validate Landsat temperature (its pH/conductivity are unreliable) | `src/data/kaggle_sources.py` |
 | Turbidity formula recalibration | literature Nechad/Dogliotti had an 11.7x median overestimate vs measured CPCB turbidity; refit per-water-body-type power law (`turbidity_calibrated`) brings the median ratio to ~1.0 and raises pooled Spearman 0.23 -> 0.33 | `src/features/feature_engineering.py`, `reports/real/empirical_formula_validation.json` |
 | WQI-tier classifier (satellite-only) | done; leakage-free (features exclude do/bod/ph/turbidity/etc.); OOF accuracy 0.29 vs 0.27 majority-class baseline, macro F1 0.21 vs 0.14 — a real but modest edge | `src/models/tier_classifier.py`, `reports/real/tier_classification_metrics.json` |
+
+## 11. Final model design (2026-09-19 rework, evidence-driven)
+
+The regression models above are near-zero on real data (DO R² 0.036, BOD 0.009, turbidity −0.056
+out-of-fold; see section 10). Section 10's "DO 0.022 → 0.036" entry compared a 2,517-row run against
+an 8,461-row run, confounding more data with better features. This section replaces that guesswork
+with clean ablations (identical rows, identical spatial-CV folds), a variance decomposition, an oracle
+ceiling, a learning curve and threshold-classification tests, all on `train_real_large.parquet`.
+
+**What the measurements say:**
+
+| Evidence | Result | Consequence |
+|---|---|---|
+| Variance decomposition | 85–100 % of every target's variance is between-station, only 11–22 % within | Site-blocked CV asks "what is a never-seen station's level?" — mostly set by local sewage/industry, which reflectance cannot see |
+| Oracle ceiling (knows the station's own mean) | DO R² 0.61, BOD 0.79, turbidity 0.49 | The signal is real but lives in station identity, not spectra |
+| Clean ablation, BOD (n=4,684) | spectral −0.011 → +urban +0.121 (Spearman 0.256 → 0.350); +rainfall +0.122 but adds nothing on top of urban | Urban proximity is the whole gain; rainfall is redundant with it |
+| Clean ablation, DO (n=5,571) | spectral-only −0.001 is best; +urban −0.074; +rainfall −0.079 | Context features actively hurt DO |
+| Clean ablation, turbidity (n=2,308) | spectral-only/+type best; +urban −0.111; +rainfall −0.158 | Same — a single global feature list was wrong for every target |
+| Threshold screening | BOD>3 mg/L AUC 0.755 (AP 0.601 vs 0.288 base), BOD>6 AUC 0.772, CPCB-polluted AUC 0.732, DO<4 AUC 0.718 | The usable product |
+| Turbidity screening | >10 NTU AUC 0.627, >50 NTU AUC 0.542 | Weak; not oversold |
+| Station-level BOD (median per station) | R² 0.177, Spearman 0.376 | Best regression in the project — a station-ranking product |
+| Within-station anomaly | turbidity R² +0.085; BOD/DO ≈ 0 | Satellite can see *change* in turbidity at a known station |
+| Match quality | ρ(B4, turbidity) 0.194 (<200 px) → 0.368 (>1000 px); day_diff barely matters (0.286/0.315/0.274) | Filter by water-pixel count, not by date closeness |
+| Learning curve, BOD>3 | AUC 0.743 @25 % of stations → 0.755 @100 % | Extracting the remaining visits gains ≈ nothing |
+| Literature | DO/BOD/TN/TP/COD are classed "optically inactive"; random splits overstate operational skill | The near-zero DO/BOD regression is expected, not a bug |
+
+**Decisions taken:** (1) pollution **screening** is now the headline deliverable; regression is
+secondary and flagged; (2) the Open-Meteo rainfall fetch's two bugs (hourly-limit handling, the `.asof()`
+lookup) were fixed and unit tested, and the resulting rainfall column is **dropped from every feature
+set** regardless (tested, not a placeholder — see section 3's Open-Meteo entry below and
+`data/ground_truth/data_source_log.md`; the backfill itself is 68.4 % complete, blocked at 100 % only by
+this rework's sandbox having no network route to Open-Meteo); (3) DO is **kept** (for the low-DO screening flag) but flagged
+as having no demonstrated skill of its own.
+
+**Changes:** per-target feature sets (`src/models/schema.py::FEATURE_SETS`); `WaterQualityXGB` accepts
+`feature_cols` as a dict; binary screening classifiers (`src/models/tier_classifier.py::ScreeningClassifier`,
+`scripts/train_screening.py`, `reports/real/screening_metrics.json`); station-level BOD ranking and a
+turbidity within-station-anomaly mode (`scripts/train_real_models.py`); a constant per-fold baseline's
+pooled Spearman is now NaN instead of a meaningless −0.2 to −0.38 (`src/models/metrics.py`); the any-AOI
+serving path (`src/data/aoi.py`) now supplies urban-proximity/season context per pixel so the BOD/turbidity
+models work there too. **Not done, with evidence:** no further satellite extraction (learning curve flat),
+no multi-scene composites (day_diff barely matters), no chlorophyll-a model (no CPCB ground truth), no
+SWIR-residual correction (mixed results, B4 got worse).
 | R² > 0.85 | **not achieved and not achievable with this signal**; out-of-fold raw R² stays near zero even after recalibration and more data — this is a genuine ceiling of single-satellite-scene optical reflectance for chemistry parameters under honest spatial CV, not a bug. Rank correlation (Spearman 0.14-0.24) and log-scale R² are the honest headline numbers and both beat naive baselines | `reports/real/metrics_table.csv` |

@@ -20,7 +20,9 @@ total requested days by roughly (span_of_data / window_days) -- an ~8x reduction
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
+import random
 import time
 
 import pandas as pd
@@ -32,7 +34,31 @@ ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 BATCH_SIZE = 50
 REQUEST_DELAY_S = 2.0
 MAX_RETRIES = 5
+MAX_HOURLY_WAITS = 24     # ~a day's worth of hourly windows before giving up, not an infinite loop
 DEFAULT_WINDOW_DAYS = 35   # >= the longest antecedent window (30d) plus slack
+
+
+class DailyQuotaExceeded(RuntimeError):
+    """Open-Meteo's free-tier *daily* call quota is exhausted; no reset-time is confirmed, so the
+    caller should stop and retry later rather than spin (see fetch_daily_rainfall's offline= param)."""
+
+
+def _retry_reason(resp: requests.Response) -> str:
+    """Open-Meteo's 429 body is JSON like {"error": true, "reason": "Hourly API request limit exceeded..."}."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return ""
+    return str(body.get("reason", "")) if isinstance(body, dict) else ""
+
+
+def _seconds_until_next_utc_hour(now: "dt.datetime | None" = None, jitter_s: float | None = None) -> float:
+    """Seconds from ``now`` (default: actual UTC now) to the next UTC hour boundary, plus a small random
+    jitter so multiple callers hitting the hourly limit together don't all retry in the same instant."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    next_hour = now.replace(minute=0, second=0, microsecond=0) + dt.timedelta(hours=1)
+    jitter_s = random.uniform(1.0, 15.0) if jitter_s is None else jitter_s
+    return (next_hour - now).total_seconds() + jitter_s
 
 
 def compute_rainfall_windows(visits: pd.DataFrame, window_days: int = DEFAULT_WINDOW_DAYS) -> pd.DataFrame:
@@ -65,10 +91,15 @@ def fetch_precip_batch(lats: list[float], lons: list[float], start_date: str, en
     """One API call for up to BATCH_SIZE locations sharing a date range; returns a list of
     {time: [...], precipitation_sum: [...]}.
 
-    Retries with exponential backoff on HTTP 429. Note this only smooths over short bursts -- if
-    the day's call quota is actually exhausted, every retry (and every later call) will also 429
-    until the free tier's quota resets; compute_rainfall_windows is what keeps total volume low
-    enough that this project's fetch can plausibly finish inside a day's quota at all.
+    On HTTP 429 the response body names which limit was hit (confirmed live: the message is
+    "Hourly API request limit exceeded", not the daily cap an earlier version of this function
+    assumed -- a fixed exponential backoff topping out around a minute can never clear an hourly
+    window, so it looped uselessly). Handling per limit:
+      * "Hourly" -- sleep to the next UTC-hour boundary (+ jitter), then retry; this limit clears
+        on its own, so it does not count against MAX_RETRIES (bounded instead by MAX_HOURLY_WAITS).
+      * "Daily" -- raise DailyQuotaExceeded immediately: retrying cannot help until the quota resets.
+      * anything else (unrecognised body, transient 429 with no reason) -- exponential backoff,
+        MAX_RETRIES attempts, same as before.
     """
     params = {
         "latitude": ",".join(f"{v:.5f}" for v in lats),
@@ -78,18 +109,35 @@ def fetch_precip_batch(lats: list[float], lons: list[float], start_date: str, en
         "daily": "precipitation_sum",
         "timezone": "Asia/Kolkata",
     }
-    for attempt in range(MAX_RETRIES):
+    backoff_attempt = 0
+    hourly_waits = 0
+    while True:
         resp = requests.get(ARCHIVE_URL, params=params, timeout=timeout)
         if resp.status_code == 429:
-            wait = 2.0 * (2 ** attempt)
-            log.warning("rate limited, retrying in %.0fs (attempt %d/%d)", wait, attempt + 1, MAX_RETRIES)
+            reason = _retry_reason(resp)
+            low = reason.lower()
+            if "daily" in low:
+                raise DailyQuotaExceeded(reason or "Open-Meteo daily call quota exceeded")
+            if "hourly" in low:
+                hourly_waits += 1
+                if hourly_waits > MAX_HOURLY_WAITS:
+                    raise DailyQuotaExceeded(
+                        f"still hourly-rate-limited after {MAX_HOURLY_WAITS} UTC-hour windows: {reason}")
+                wait = _seconds_until_next_utc_hour()
+                log.warning("hourly rate limit (%s); sleeping %.0fs to the next UTC hour", reason, wait)
+                time.sleep(wait)
+                continue
+            if backoff_attempt >= MAX_RETRIES:
+                resp.raise_for_status()
+            wait = 2.0 * (2 ** backoff_attempt)
+            backoff_attempt += 1
+            log.warning("rate limited (%s), retrying in %.0fs (attempt %d/%d)",
+                       reason or "no reason given", wait, backoff_attempt, MAX_RETRIES)
             time.sleep(wait)
             continue
         resp.raise_for_status()
         data = resp.json()
         return data if isinstance(data, list) else [data]
-    resp.raise_for_status()
-    return []
 
 
 def fetch_daily_rainfall(sites: pd.DataFrame, windows: pd.DataFrame, cache_path=None,
@@ -169,13 +217,20 @@ def antecedent_rainfall_features(visits: pd.DataFrame, rainfall: pd.DataFrame) -
 
     def lookup(site, date, window):
         cum = cum_by_site.get(site)
-        if cum is None:
+        if cum is None or len(cum) == 0:
             return float("nan")
         end = date - pd.Timedelta(days=1)
         start = date - pd.Timedelta(days=window)
-        end_val = cum.reindex([end]).ffill().iloc[0] if len(cum) else float("nan")
-        before_start = cum[cum.index <= start]
-        start_val = before_start.iloc[-1] if len(before_start) else 0.0
+        # .asof() forward-fills from the last cached day at or before the target date; the previous
+        # `cum.reindex([end]).ffill()` looked for `end` in a single-element frame, so it could never
+        # actually forward-fill and silently returned NaN whenever `end` itself was missing from the
+        # cache (verified directly against data/interim/rainfall_daily.parquet).
+        end_val = cum.asof(end)
+        start_val = cum.asof(start)
+        if pd.isna(start_val):
+            start_val = 0.0          # nothing cached before the window start: treat prior rainfall as 0
+        if pd.isna(end_val):
+            return float("nan")      # no cached day at or before the visit: genuinely unknown, not 0
         return end_val - start_val
 
     feats: dict[str, list[float]] = {f"rain_{w}d_mm": [] for w in windows}

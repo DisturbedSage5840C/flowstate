@@ -49,6 +49,11 @@ def compare_models(xgb_metrics: pd.DataFrame, dl_metrics: pd.DataFrame | None = 
                 row[f"{name}_RMSE"] = float(by_model.loc[name, "RMSE"])
                 if "R2_log" in by_model.columns:
                     row[f"{name}_R2_log"] = float(by_model.loc[name, "R2_log"])
+                # Passthrough for screening/classifier rows sharing this table (src.models.metrics.classification_scores):
+                # never used for the regression production-model decision below, only reported alongside it.
+                for auc_col in ("auc", "ap", "lift"):
+                    if auc_col in by_model.columns:
+                        row[f"{name}_{auc_col}"] = float(by_model.loc[name, auc_col])
         row["n"] = int(by_model["n"].max()) if "n" in by_model else None
 
         available = [c for c in CANDIDATES if f"{c}_RMSE" in row]

@@ -112,3 +112,53 @@ def test_r2_log_reported_for_heavy_tailed_targets_only():
     do = t[(t.target == "do") & (t.water_body_type == "overall")].iloc[0]
     assert bod["R2_log"] > 0.9
     assert np.isnan(do["R2_log"])
+
+
+# ---------------------------------------------------------------------------
+# Constant-per-fold baseline: pooled Spearman is an artifact, not real skill
+# ---------------------------------------------------------------------------
+
+def test_constant_within_group_prediction_returns_nan_spearman():
+    from src.models.metrics import _safe_spearman
+
+    rng = np.random.default_rng(0)
+    y_true = rng.uniform(1, 50, 60)
+    groups = np.repeat(["fold_a", "fold_b", "fold_c"], 20)
+    # a "predict the fold mean" baseline: every row in a group gets that group's one constant value
+    y_pred = np.repeat([10.0, 30.0, 5.0], 20)
+    assert np.isnan(_safe_spearman(y_true, y_pred, groups=groups))
+    # a real model varies within every group -> genuine Spearman, not NaN
+    y_pred_real = y_true + rng.normal(0, 2, 60)
+    assert not np.isnan(_safe_spearman(y_true, y_pred_real, groups=groups))
+    # no groups given -> unchanged prior behaviour (pooled Spearman computed as before)
+    assert not np.isnan(_safe_spearman(y_true, y_pred))
+
+
+def test_metrics_reporter_report_returns_nan_spearman_for_a_constant_per_fold_baseline():
+    from src.models.baselines import mean_baseline_oof
+    from src.models.spatial_cv import SpatialKFold
+
+    rng = np.random.default_rng(1)
+    n = 60
+    sites = [f"s{i}" for i in range(12)]
+    df = pd.DataFrame({
+        "site": np.repeat(sites, n // 12),
+        "lat": np.repeat(np.linspace(10, 30, 12), n // 12),
+        "lon": np.repeat(np.linspace(70, 90, 12), n // 12),
+        "water_body_type": "lake",
+        "bod": rng.uniform(1, 30, n),
+    })
+    baseline = mean_baseline_oof(df, ["bod"], n_folds=3, random_state=0)
+    table = MetricsReporter(targets=["bod"]).report(df, baseline)
+    overall = table[table.water_body_type == "overall"].iloc[0]
+    assert np.isnan(overall["spearman"])
+
+
+def test_report_still_computes_spearman_without_a_site_column():
+    """group_col defaults to 'site'; when it's absent from df_true, spearman falls back to the old
+    (ungrouped) pooled behaviour instead of crashing."""
+    y_true, y_pred = _make_pred_df()
+    reporter = MetricsReporter(targets=["chl_a"])
+    table = reporter.report(y_true, y_pred)          # _make_pred_df's frame has no "site" column
+    overall = table[table.water_body_type == "overall"].iloc[0]
+    assert not np.isnan(overall["spearman"])

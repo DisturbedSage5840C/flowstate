@@ -72,8 +72,10 @@ class WaterQualityXGB:
         Spatial CV folds used inside the Optuna objective.
     random_state : int
         Global RNG seed for reproducibility.
-    feature_cols : list[str]
-        Input feature columns (default: FEATURE_COLS).
+    feature_cols : list[str] | dict[str, list[str]]
+        Input feature columns (default: FEATURE_COLS). Either one flat list shared by every target, or a
+        dict mapping target -> its own feature list (src.models.schema.FEATURE_SETS): a target's own
+        columns beat reflectance alone or hurt it, and the evidence differs per target (see schema.py).
     targets : list[str]
         Target parameters to model (default: chl_a, turbidity, do).
     """
@@ -82,7 +84,7 @@ class WaterQualityXGB:
         self,
         n_folds: int = 5,
         random_state: int = 42,
-        feature_cols: list[str] | None = None,
+        feature_cols: list[str] | dict[str, list[str]] | None = None,
         targets: list[str] | None = None,
         log_targets: tuple[str, ...] | None = None,
     ):
@@ -94,6 +96,14 @@ class WaterQualityXGB:
         self.targets = targets or TARGET_COLS
         self._models: dict[str, xgb.XGBRegressor] = {}
         self._best_params: dict[str, dict] = {}
+
+    def _features_for(self, target: str) -> list[str]:
+        """The feature columns to use for ``target``: per-target when feature_cols is a dict, else the shared list."""
+        if isinstance(self.feature_cols, dict):
+            if target not in self.feature_cols:
+                raise KeyError(f"no feature set for target '{target}' in feature_cols={list(self.feature_cols)}")
+            return self.feature_cols[target]
+        return self.feature_cols
 
     # ------------------------------------------------------------------
     # Training
@@ -141,7 +151,7 @@ class WaterQualityXGB:
             best_rmse, best_params = self._tune(labelled, target, n_trials)
             # Refit on all labelled rows with best params (no early stopping without eval_set)
             model = self._build_model(best_params)
-            model.fit(labelled[self.feature_cols], self._to_model_scale(target, labelled[target].to_numpy()))
+            model.fit(labelled[self._features_for(target)], self._to_model_scale(target, labelled[target].to_numpy()))
             self._models[target] = model
             self._best_params[target] = best_params
             results[target] = best_rmse
@@ -159,7 +169,7 @@ class WaterQualityXGB:
         Parameters
         ----------
         df : pd.DataFrame
-            Must contain FEATURE_COLS.
+            Must contain every target's feature columns (self.feature_cols).
 
         Returns
         -------
@@ -173,7 +183,7 @@ class WaterQualityXGB:
             if target not in self._models:
                 preds[target] = np.full(len(df), np.nan)
                 continue
-            raw = self._from_model_scale(target, self._models[target].predict(df[self.feature_cols]))
+            raw = self._from_model_scale(target, self._models[target].predict(df[self._features_for(target)]))
             preds[target] = self._clip(raw, target)
         return pd.DataFrame(preds, index=df.index)
 
@@ -187,6 +197,9 @@ class WaterQualityXGB:
         Files saved:
             <model_dir>/<target>_xgb.json      ← XGBoost binary
             <model_dir>/<target>_params.json   ← Optuna best params
+
+        ``config.json`` persists ``feature_cols`` as given (a flat list or a per-target dict), so
+        ``load()`` reconstructs whichever form was used to train.
         """
         model_dir = Path(model_dir)
         model_dir.mkdir(parents=True, exist_ok=True)
@@ -206,7 +219,7 @@ class WaterQualityXGB:
         cls,
         model_dir: str | Path,
         targets: list[str] | None = None,
-        feature_cols: list[str] | None = None,
+        feature_cols: list[str] | dict[str, list[str]] | None = None,
     ) -> "WaterQualityXGB":
         """Load pre-trained models from disk.
 
@@ -214,6 +227,9 @@ class WaterQualityXGB:
         ----------
         model_dir : str | Path
             Directory containing *_xgb.json files.
+        feature_cols : list[str] | dict[str, list[str]] | None
+            Overrides the columns saved in config.json (a flat list or a per-target dict); a model saved
+            before per-target features existed loads as a flat list, still valid via _features_for.
         """
         model_dir = Path(model_dir)
         config_path = model_dir / "config.json"
@@ -261,11 +277,11 @@ class WaterQualityXGB:
             raise RuntimeError("No tuned params available. Call .train() first.")
         skf = SpatialKFold(n_folds=self.n_folds, random_state=self.random_state)
         splits = list(skf.split(df))
-        X = df[self.feature_cols]
         oof = {target: np.full(len(df), np.nan) for target in self.targets}
         for target in self.targets:
             if target not in self._best_params or target not in df.columns:
                 continue
+            X = df[self._features_for(target)]
             y = df[target]
             params = self._best_params[target]
             for train_idx, val_idx in splits:
@@ -311,7 +327,7 @@ class WaterQualityXGB:
         """Run Optuna on spatial-CV RMSE for a single target."""
         skf = SpatialKFold(n_folds=self.n_folds, random_state=self.random_state)
         splits = list(skf.split(df))
-        X = df[self.feature_cols]
+        X = df[self._features_for(target)]
         y = pd.Series(self._to_model_scale(target, df[target].to_numpy()), index=df.index)   # objective in model scale
 
         def objective(trial: optuna.Trial) -> float:

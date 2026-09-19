@@ -96,3 +96,42 @@ def test_fetch_returns_none_when_nothing_is_within_tolerance_or_clear():
 def test_predict_aoi_reports_missing_models(tmp_path):
     with pytest.raises(aoi.AOIError, match="no trained models"):
         aoi.predict_aoi(12.9, 77.6, "2020-01-29", models_dir=tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# with_context: the any-AOI serving path supplies urban/season/type context per pixel
+# ---------------------------------------------------------------------------
+
+def test_with_context_adds_urban_season_and_default_type_columns():
+    def base_predict(feats: pd.DataFrame) -> pd.DataFrame:
+        needed = {"ndci", "dist_nearest_city_km", "urban_load_index",
+                 "is_winter", "is_summer", "is_monsoon", "is_river", "is_lake", "is_reservoir"}
+        assert needed <= set(feats.columns)
+        assert (feats["is_river"] == 0).all() and (feats["is_lake"] == 0).all() and (feats["is_reservoir"] == 0).all()
+        assert (feats["dist_nearest_city_km"] < 5.0).all()           # Bengaluru itself: essentially 0 km away
+        return pd.DataFrame({"bod": 5.0}, index=feats.index)
+
+    wrapped = aoi.with_context(base_predict, lat=12.9716, lon=77.5946, date="2020-07-15")   # Bengaluru, monsoon
+    feats = pd.DataFrame({"ndci": [0.1, 0.2, 0.3]})
+    out = wrapped(feats)
+    assert (out["bod"] == 5.0).all() and len(out) == 3
+
+
+def test_with_context_derives_season_from_the_scene_date():
+    seen = {}
+
+    def base_predict(feats: pd.DataFrame) -> pd.DataFrame:
+        seen.update(feats.iloc[0].to_dict())
+        return pd.DataFrame({"bod": 1.0}, index=feats.index)
+
+    aoi.with_context(base_predict, lat=20.0, lon=78.0, date="2020-01-15")(pd.DataFrame({"ndci": [0.1]}))
+    assert seen["is_winter"] == 1 and seen["is_summer"] == 0 and seen["is_monsoon"] == 0
+
+
+def test_with_context_leaves_the_original_frame_untouched():
+    def base_predict(feats):
+        return pd.DataFrame({"bod": 1.0}, index=feats.index)
+
+    feats = pd.DataFrame({"ndci": [0.1, 0.2]})
+    aoi.with_context(base_predict, lat=12.9, lon=77.6, date="2020-01-29")(feats)
+    assert list(feats.columns) == ["ndci"]            # the caller's frame was not mutated in place

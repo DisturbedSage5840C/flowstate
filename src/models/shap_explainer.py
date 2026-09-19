@@ -75,7 +75,10 @@ class SHAPExplainer:
         pipeline : WaterQualityXGB
             Trained pipeline exposing ``_models`` dict.
         X : pd.DataFrame
-            Feature matrix (same as training features).
+            Feature matrix. Safe to pass the union of every target's columns (e.g.
+            src.models.schema.REAL_FEATURE_COLS): when ``pipeline`` has per-target feature sets
+            (feature_cols is a dict), this slices X to that target's own columns before explaining,
+            since a model can only be explained on the exact columns it was trained on.
         targets : list[str] | None
             Subset of targets to explain (default: all trained models).
         """
@@ -86,12 +89,14 @@ class SHAPExplainer:
                 continue
             print(f"[SHAP] Explaining: {target}")
             model = pipeline._models[target]
-            explainer, shap_vals = self._compute(model, X)
+            feats = pipeline._features_for(target) if hasattr(pipeline, "_features_for") else list(X.columns)
+            X_target = X[feats] if all(c in X.columns for c in feats) else X
+            explainer, shap_vals = self._compute(model, X_target)
             self._shap_cache[target] = shap_vals
             self._explainer_cache[target] = explainer
 
-            self.plot_beeswarm(shap_vals, X, target)
-            self.plot_bar(shap_vals, X.columns.tolist(), target)
+            self.plot_beeswarm(shap_vals, X_target, target)
+            self.plot_bar(shap_vals, X_target.columns.tolist(), target)
 
         # B5 → Chl-a dependence (the specific plot mentioned in the pitch)
         if "chl_a" in self._shap_cache and "B5" in X.columns:

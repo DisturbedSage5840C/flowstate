@@ -185,3 +185,58 @@ def test_models_saved_without_a_log_setting_load_as_raw_scale(tmp_path):
     cfg.pop("log_targets")
     (tmp_path / "config.json").write_text(json.dumps(cfg))
     assert WaterQualityXGB.load(tmp_path).log_targets == set()
+
+
+# ---------------------------------------------------------------------------
+# Per-target feature sets (feature_cols as a dict: src.models.schema.FEATURE_SETS)
+# ---------------------------------------------------------------------------
+
+def test_features_for_returns_the_right_list_for_dict_or_flat_feature_cols():
+    dict_pipe = WaterQualityXGB(feature_cols={"do": ["f1"], "bod": ["f1", "f2"]})
+    assert dict_pipe._features_for("do") == ["f1"]
+    assert dict_pipe._features_for("bod") == ["f1", "f2"]
+    with pytest.raises(KeyError):
+        dict_pipe._features_for("turbidity")
+
+    flat_pipe = WaterQualityXGB(feature_cols=["f1", "f2", "f3"])
+    assert flat_pipe._features_for("do") == ["f1", "f2", "f3"]
+    assert flat_pipe._features_for("anything") == ["f1", "f2", "f3"]
+
+
+def test_train_predict_and_oof_use_each_targets_own_columns(tmp_path):
+    df = _skewed_df(n=144)
+    df["f4"] = df["f1"] * 2 + df["f3"]     # extra column only "do" is allowed to see
+    feature_cols = {"turbidity": ["f1", "f2", "f3"], "do": ["f1", "f2", "f3", "f4"]}
+    pipe = WaterQualityXGB(n_folds=3, random_state=0, feature_cols=feature_cols, targets=["turbidity", "do"])
+    pipe.train(df, n_trials=2, verbose=False)
+
+    # predict() must select the target's own columns even from a df carrying every column
+    preds = pipe.predict(df)
+    assert set(preds.columns) == {"turbidity", "do"} and preds.notna().all().all()
+
+    # a df missing "f4" still works for the "turbidity" model (which never needed it)
+    partial = df.drop(columns=["f4"])
+    turb_only = WaterQualityXGB(feature_cols=feature_cols, targets=["turbidity"])
+    turb_only._models["turbidity"] = pipe._models["turbidity"]
+    assert turb_only.predict(partial)["turbidity"].notna().all()
+
+    oof = pipe.predict_oof(df)
+    assert oof["turbidity"].notna().all() and oof["do"].notna().all()
+
+
+def test_per_target_feature_cols_round_trip_through_save_and_load(tmp_path):
+    import json
+    df = _skewed_df(n=144)
+    feature_cols = {"turbidity": ["f1", "f2"], "do": ["f2", "f3"]}
+    pipe = WaterQualityXGB(n_folds=3, random_state=0, feature_cols=feature_cols, targets=["turbidity", "do"])
+    pipe.train(df, n_trials=2, verbose=False)
+    pipe.save(tmp_path)
+
+    cfg = json.loads((tmp_path / "config.json").read_text())
+    assert cfg["feature_cols"] == feature_cols
+
+    loaded = WaterQualityXGB.load(tmp_path)
+    assert loaded.feature_cols == feature_cols
+    assert loaded._features_for("turbidity") == ["f1", "f2"]
+    assert loaded._features_for("do") == ["f2", "f3"]
+    pd.testing.assert_frame_equal(pipe.predict(df), loaded.predict(df))

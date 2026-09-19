@@ -79,12 +79,14 @@ def render(bundle: RealBundle) -> None:
               help=f"Only visits where every criterion of the assigned class was measured ({n_complete:,} of "
                    f"{len(df):,} visits). Coliform is missing for most visits, so class A-C cannot be confirmed for the rest.")
 
-    tab_map, tab_station, tab_aoi, tab_perf, tab_shap, tab_data = st.tabs(
-        ["🗺️ Map", "📍 Station", "🛰️ Any-AOI map", "📊 Model performance", "🔍 Interpretability",
+    tab_map, tab_screen, tab_station, tab_aoi, tab_perf, tab_shap, tab_data = st.tabs(
+        ["🗺️ Map", "🚦 Screening", "📍 Station", "🛰️ Any-AOI map", "📊 Model performance", "🔍 Interpretability",
          "🧾 Data & provenance"])
 
     with tab_map:
         _map_tab(shown, parameter, source)
+    with tab_screen:
+        _screening_tab(bundle)
     with tab_station:
         _station_tab(bundle, df)
     with tab_aoi:
@@ -171,8 +173,65 @@ def _skill_summary(bundle: RealBundle) -> str:
     if bundle.metrics is None:
         return "no out-of-fold metrics available"
     m = bundle.metrics[(bundle.metrics["model"] == "xgboost_oof") & (bundle.metrics["water_body_type"] == "overall")]
-    parts = [f"{r.target} R² {r.R2:.2f}" for r in m.itertuples()]
+    parts = [f"{r.target} R² {r.R2:.2f}" + (" (no demonstrated skill)" if r.target == "do" else "")
+             for r in m.itertuples()]
     return ", ".join(parts) if parts else "no out-of-fold metrics available"
+
+
+SCREENING_LABELS = {
+    "bod_gt_3": "BOD > 3 mg/L (CPCB Class C limit)",
+    "bod_gt_6": "BOD > 6 mg/L (clearly polluted)",
+    "do_lt_4": "DO < 4 mg/L (unsafe, below Class D)",
+    "cpcb_polluted": "Worse than CPCB Class C (class D / E / Below E)",
+}
+
+
+def _screening_tab(bundle: RealBundle) -> None:
+    targets = (bundle.screening or {}).get("targets", {})
+    if not targets:
+        st.info("Run `python -m scripts.train_screening` to produce pollution-screening metrics.")
+        return
+    st.markdown(
+        "**Headline deliverable.** The row-level DO/BOD/turbidity regressions (Model performance tab) show "
+        "little to no skill -- DO and BOD are not optically active. A binary pollution screen is a different, "
+        "easier question the same reflectance *can* answer: is this station's water likely polluted, to "
+        "prioritise for inspection, not an exact concentration.", )
+    st.caption("Not accuracy: these targets are imbalanced (base rate often well under 50%), so \"predict "
+              "everything negative\" would score high accuracy while finding nothing. AUC and average precision "
+              "vs. the base rate (lift) are the honest numbers.")
+    rows = []
+    for target, res in targets.items():
+        row = {"target": SCREENING_LABELS.get(target, target), "n": res.get("n"),
+              "base rate": res.get("base_rate"), "AUC": res.get("auc"),
+              "avg. precision": res.get("average_precision"), "lift vs base rate": res.get("lift_vs_base_rate")}
+        for k, v in (res.get("precision_at_k") or {}).items():
+            row[f"precision@{k}"] = v
+        rows.append(row)
+    st.dataframe(pd.DataFrame(rows).round(3), width="stretch", hide_index=True)
+
+    proba_cols = {t: f"{t}_proba" for t in targets if f"{t}_proba" in bundle.table.columns}
+    if not proba_cols:
+        return
+    st.markdown("#### Inspect first")
+    target = st.selectbox("Screen", list(proba_cols), format_func=lambda t: SCREENING_LABELS.get(t, t),
+                          key="rv_screen_target")
+    col = proba_cols[target]
+    latest = latest_per_station(bundle.table)
+    ranked = latest[latest[col].notna()].sort_values(col, ascending=False)
+    if ranked.empty:
+        st.info("No out-of-fold screening predictions for the current selection.")
+        return
+    max_n = max(5, len(ranked))
+    n = st.slider("Shortlist size", 5, min(50, max_n), min(20, max_n), key="rv_screen_n") if len(ranked) > 5 else len(ranked)
+    show_cols = [c for c in ("site", "state", "water_body_type", "date", col, "do", "bod", "turbidity", "cpcb_class")
+                if c in ranked.columns]
+    st.dataframe(ranked[show_cols].head(n).reset_index(drop=True), width="stretch", hide_index=True)
+    res = targets.get(target, {})
+    auc, lift = res.get("auc"), res.get("lift_vs_base_rate")
+    auc_str = f"{auc:.2f}" if isinstance(auc, (int, float)) and np.isfinite(auc) else "n/a"
+    lift_str = f"{lift:.2f}x" if isinstance(lift, (int, float)) and np.isfinite(lift) else "n/a"
+    st.caption(f"Out-of-fold predicted probability, ranked descending -- the top rows are where to send an "
+              f"inspector first, not a certainty. AUC {auc_str}, lift {lift_str} the base rate.")
 
 
 def _aoi_tab(bundle: RealBundle) -> None:
@@ -246,6 +305,9 @@ def _performance_tab(bundle: RealBundle) -> None:
         return
     st.markdown("Out-of-fold, site-blocked spatial cross-validation. **R² ≤ 0 means no better than predicting "
                 "the training average**; the baselines are scored on the same folds.")
+    st.caption("DO has no demonstrated skill here in any ablation (reflectance cannot see dissolved oxygen "
+              "directly) -- it is kept only to support the low-DO screening flag (Screening tab), not for its "
+              "own accuracy. See the Screening tab for the models that do show real skill.")
     if bundle.comparison is not None and len(bundle.comparison):
         st.markdown("#### Production choice per target")
         st.caption("XGBoost is the default; the DL model is chosen only when its out-of-fold RMSE is lower by more than 5%. "
