@@ -1,9 +1,11 @@
 import { type Mode } from './data'
 import { api, useApi } from './api'
 import { IndiaMap } from './Map'
-import { Icon } from './ui'
+import { Icon, ThemeToggle } from './ui'
+import { useTheme } from './theme'
 
 export function Landing({ onEnter }: { onEnter: (mode: Mode | 'sentinel') => void }) {
+  const { dark, toggle } = useTheme()
   const cities = useApi(api.cities, 'cities')
   const overview = useApi(() => api.overview(), 'overview')
   const o = overview.data
@@ -11,7 +13,7 @@ export function Landing({ onEnter }: { onEnter: (mode: Mode | 'sentinel') => voi
     <div className="relative h-full w-full overflow-y-auto">
       <div className="fixed inset-0">
         <IndiaMap cities={cities.data ?? []} />
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(105deg,rgba(242,239,231,0.94)_0%,rgba(242,239,231,0.86)_38%,rgba(242,239,231,0.5)_70%,rgba(242,239,231,0.25)_100%)]" />
+        <div className="pointer-events-none absolute inset-0 fs-veil" />
       </div>
 
       <div className="relative z-10 flex min-h-full flex-col">
@@ -26,10 +28,13 @@ export function Landing({ onEnter }: { onEnter: (mode: Mode | 'sentinel') => voi
               <p className="eyebrow mt-0.5 text-[var(--color-mute-2)]">Satellite intelligence for India's urban waters</p>
             </div>
           </div>
+          <div className="flex items-center gap-4">
+          <ThemeToggle dark={dark} onClick={toggle} />
           <span className="eyebrow hidden shrink-0 items-center gap-2 text-[var(--color-mute)] sm:flex">
             <span className={`size-1.5 rounded-full ${overview.error ? 'bg-[var(--color-risk-high)]' : 'bg-[var(--color-risk-low)] fs-pulse'}`} />
             {overview.error ? 'API offline' : o ? `${o.stations.toLocaleString()} CPCB stations · Sentinel-2 · ${o.date_range[0].slice(-4)}–${o.date_range[1].slice(-4)}` : 'Loading…'}
           </span>
+          </div>
         </header>
 
         {/* hero */}

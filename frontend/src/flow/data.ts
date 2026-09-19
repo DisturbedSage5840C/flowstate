@@ -14,8 +14,13 @@ export const RISK_HEX: Record<Risk, string> = {
   high: '#bc493a',
 }
 
-/* Colour for a station with no reading for the active layer */
-export const NO_DATA_HEX = '#b9b6ab'
+/* Canvas/vector drawing can't resolve CSS variables, so Leaflet gets concrete per-theme colours
+   (kept in sync with the tokens in index.css). */
+export type Palette = { risk: Record<Risk, string>; noData: string; ring: string; selRing: string; cityRing: string }
+export const PALETTE: Record<'light' | 'dark', Palette> = {
+  light: { risk: RISK_HEX, noData: '#b9b6ab', ring: '#ffffff', selRing: '#23262b', cityRing: '#475569' },
+  dark: { risk: { low: '#3fae80', mod: '#dba24c', high: '#e2665a' }, noData: '#5d666f', ring: '#1c2126', selRing: '#ffffff', cityRing: '#94a3b8' },
+}
 
 export const riskWord = (r: Risk) => (r === 'high' ? 'HIGH' : r === 'mod' ? 'MODERATE' : 'LOWER')
 

@@ -1,12 +1,15 @@
 import { useEffect, useMemo } from 'react'
 import { CircleMarker, MapContainer, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
-import { NO_DATA_HEX, RISK_HEX, type Risk } from './data'
+import { PALETTE, type Palette, type Risk } from './data'
+import { useTheme } from './theme'
 import type { City, Station } from './api'
 
 // Esri light-gray canvas — key-free, matches the light editorial ground
 const GRAY_BASE = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}'
 const GRAY_LABELS = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}'
+const DARK_BASE = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'
+const DARK_LABELS = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}'
 const ESRI_IMAGERY = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
 // Sentinel-2 cloudless 2020 mosaic (EOX). Attribution is required by the licence.
 const S2_CLOUDLESS = 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg'
@@ -18,29 +21,31 @@ export type ColorBy = 'overall' | 'turb' | 'bod' | 'do' | 'hist'
 
 const INDIA_CENTER: [number, number] = [22.5, 79]
 
-export function stationColor(s: Station, by: ColorBy): string {
+export function stationColor(s: Station, by: ColorBy, pal: Palette): string {
   switch (by) {
     case 'turb':
-      return s.rt ? RISK_HEX[s.rt] : NO_DATA_HEX
+      return s.rt ? pal.risk[s.rt] : pal.noData
     case 'bod':
-      return s.rb ? RISK_HEX[s.rb] : NO_DATA_HEX
+      return s.rb ? pal.risk[s.rb] : pal.noData
     case 'do':
-      return s.rd ? RISK_HEX[s.rd] : NO_DATA_HEX
+      return s.rd ? pal.risk[s.rd] : pal.noData
     case 'hist':
-      return s.ch === 'worse' ? RISK_HEX.high : s.ch === 'better' ? RISK_HEX.low : NO_DATA_HEX
+      return s.ch === 'worse' ? pal.risk.high : s.ch === 'better' ? pal.risk.low : pal.noData
     default:
-      return RISK_HEX[s.risk]
+      return pal.risk[s.risk]
   }
 }
 
-function riskDot(risk: Risk) {
-  return { color: '#ffffff', weight: 2, fillColor: RISK_HEX[risk], fillOpacity: 1 }
+function riskDot(risk: Risk, pal: Palette) {
+  return { color: pal.ring, weight: 2, fillColor: pal.risk[risk], fillOpacity: 1 }
 }
 
 /* ── Landing: real map of India, non-interactive backdrop, one dot per city with station coverage ── */
 export function IndiaMap({ cities }: { cities: City[] }) {
+  const { dark, theme } = useTheme()
+  const pal = PALETTE[theme]
   return (
-    <div className="fs-static absolute inset-0">
+    <div className="fs-static absolute inset-0 isolate">
       <MapContainer
         center={INDIA_CENTER}
         zoom={5}
@@ -54,9 +59,9 @@ export function IndiaMap({ cities }: { cities: City[] }) {
         className="size-full"
         style={{ background: 'var(--color-abyss)' }}
       >
-        <TileLayer url={GRAY_BASE} maxZoom={16} />
+        <TileLayer key={theme} url={dark ? DARK_BASE : GRAY_BASE} maxZoom={16} />
         {cities.map((c) => (
-          <CircleMarker key={c.name} center={[c.lat, c.lon]} radius={4 + Math.min(6, Math.sqrt(c.stations) / 1.6)} pathOptions={riskDot(c.risk)}>
+          <CircleMarker key={c.name} center={[c.lat, c.lon]} radius={4 + Math.min(6, Math.sqrt(c.stations) / 1.6)} pathOptions={riskDot(c.risk, pal)}>
             <Tooltip direction="right" offset={[8, 0]} opacity={1} className="fs-tooltip">
               {c.name} · {c.stations} stations · {Math.round(c.high_share * 100)}% high risk
             </Tooltip>
@@ -89,12 +94,13 @@ function FitIds({ stations, ids, nonce }: { stations: Station[]; ids: Set<string
 }
 
 function BaseTiles({ base }: { base: Basemap }) {
+  const { dark } = useTheme()
   if (base === 's2t') return <TileLayer key="s2t" url={S2_CLOUDLESS} maxZoom={13} attribution={S2_ATTR} />
   if (base === 'esri') return <TileLayer key="esri" url={ESRI_IMAGERY} maxZoom={18} attribution="Imagery © Esri, Maxar, Earthstar Geographics" />
   return (
     <>
-      <TileLayer key="g" url={GRAY_BASE} maxZoom={16} attribution={ATTR} />
-      <TileLayer key="gl" url={GRAY_LABELS} maxZoom={16} />
+      <TileLayer key={dark ? 'dg' : 'g'} url={dark ? DARK_BASE : GRAY_BASE} maxZoom={16} attribution={ATTR} />
+      <TileLayer key={dark ? 'dgl' : 'gl'} url={dark ? DARK_LABELS : GRAY_LABELS} maxZoom={16} />
     </>
   )
 }
@@ -127,6 +133,7 @@ export function WaterMap({
   onSelect: (id: string) => void
   onMove?: (lat: number, lon: number) => void
 }) {
+  const pal = PALETTE[useTheme().theme]
   // draw order: dim/filtered-out first, then low -> high so the risky stations sit on top
   const ordered = useMemo(() => {
     const rank = (s: Station) => (filterIds && !filterIds.has(s.id) ? -1 : s.risk === 'high' ? 2 : s.risk === 'mod' ? 1 : 0)
@@ -141,7 +148,7 @@ export function WaterMap({
         <FitIds stations={stations} ids={filterIds} nonce={filterNonce} />
         {onMove && <MoveReporter onMove={onMove} />}
         {cities?.map((c) => (
-          <CircleMarker key={c.name} center={[c.lat, c.lon]} interactive={false} radius={11} pathOptions={{ color: '#475569', weight: 1.2, dashArray: '3 3', fill: false, opacity: 0.8 }} />
+          <CircleMarker key={c.name} center={[c.lat, c.lon]} interactive={false} radius={11} pathOptions={{ color: pal.cityRing, weight: 1.2, dashArray: '3 3', fill: false, opacity: 0.8 }} />
         ))}
         {ordered.map((s) => {
           const dim = !!filterIds && !filterIds.has(s.id)
@@ -152,9 +159,9 @@ export function WaterMap({
               center={[s.lat, s.lon]}
               radius={active ? 10 : dim ? 3 : 5}
               pathOptions={{
-                color: active ? '#23262b' : '#ffffff',
+                color: active ? pal.selRing : pal.ring,
                 weight: active ? 2.5 : 1,
-                fillColor: dim ? NO_DATA_HEX : stationColor(s, colorBy),
+                fillColor: dim ? pal.noData : stationColor(s, colorBy, pal),
                 fillOpacity: dim ? 0.35 : 0.92,
               }}
               eventHandlers={{ click: () => onSelect(s.id) }}
@@ -182,13 +189,14 @@ function MoveReporter({ onMove }: { onMove: (lat: number, lon: number) => void }
 
 /* ── Sentinel explorer: satellite basemap, optional model-risk markers ── */
 export function SatelliteMap({ base, stations, onMove, onSelect }: { base: Basemap; stations: Station[] | null; onMove: (lat: number, lon: number) => void; onSelect: (id: string) => void }) {
+  const pal = PALETTE[useTheme().theme]
   return (
     <div className="absolute inset-0 isolate">
       <MapContainer center={INDIA_CENTER} zoom={5} minZoom={4} zoomControl attributionControl scrollWheelZoom preferCanvas className="size-full">
         <BaseTiles base={base} />
         <MoveReporter onMove={onMove} />
         {stations?.map((s) => (
-          <CircleMarker key={s.id} center={[s.lat, s.lon]} radius={5} pathOptions={{ color: '#fff', weight: 1, fillColor: RISK_HEX[s.risk], fillOpacity: 0.95 }} eventHandlers={{ click: () => onSelect(s.id) }}>
+          <CircleMarker key={s.id} center={[s.lat, s.lon]} radius={5} pathOptions={{ color: '#fff', weight: 1, fillColor: pal.risk[s.risk], fillOpacity: 0.95 }} eventHandlers={{ click: () => onSelect(s.id) }}>
             <Tooltip direction="top" offset={[0, -6]} opacity={1} className="fs-tooltip">
               {s.name} · {s.state}
             </Tooltip>

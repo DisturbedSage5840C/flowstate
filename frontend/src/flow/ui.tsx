@@ -23,6 +23,8 @@ export function Icon({ name, className = 'size-4', style }: { name: string; clas
     reset: <><path d="M4 4v6h6" {...S} /><path d="M4 10a8 8 0 1 1-1 4" {...S} /></>,
     globe: <><circle cx="12" cy="12" r="9" {...S} /><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18" {...S} /></>,
     city: <><path d="M3 21h18" {...S} /><path d="M5 21V7l6-3v17" {...S} /><path d="M11 21V10l6 2v9" {...S} /><path d="M8 9v.01M8 13v.01M8 17v.01M14 14v.01M14 17v.01" {...S} /></>,
+    sun: <><circle cx="12" cy="12" r="4" {...S} /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" {...S} /></>,
+    moon: <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" {...S} />,
     wave: <><path d="M2 8c2 0 2 1.6 4 1.6S8 8 10 8s2 1.6 4 1.6S16 8 18 8s2 1.6 4 1.6" {...S} /><path d="M2 13c2 0 2 1.6 4 1.6S8 13 10 13s2 1.6 4 1.6S16 13 18 13s2 1.6 4 1.6" {...S} /><path d="M2 18c2 0 2 1.6 4 1.6S8 18 10 18s2 1.6 4 1.6S16 18 18 18s2 1.6 4 1.6" {...S} /></>,
   }
   return <svg viewBox="0 0 24 24" className={className} style={style} aria-hidden>{p[name]}</svg>
@@ -41,6 +43,20 @@ export function RiskBadge({ risk, label, size = 'md' }: { risk: Risk; label?: st
       <span className="size-1.5 rounded-full" style={{ background: c }} />
       {label ?? `${riskWord(risk)} RISK`}
     </span>
+  )
+}
+
+/* Light/dark switch: shows the mode you would switch TO */
+export function ThemeToggle({ dark, onClick }: { dark: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+      aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+      className="grid size-8 place-items-center rounded-[4px] border border-[var(--color-hair)] text-[var(--color-mute)] transition-colors hover:text-[var(--color-ink)]"
+    >
+      <Icon name={dark ? 'sun' : 'moon'} className="size-4" />
+    </button>
   )
 }
 

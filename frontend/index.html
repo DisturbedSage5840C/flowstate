@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Flow State — water-quality screening for India</title>
   </head>
+  <script>
+    // set the theme before first paint so there is no light flash
+    try {
+      var t = localStorage.getItem('flowstate.theme')
+      if (t !== 'light' && t !== 'dark') t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+      document.documentElement.dataset.theme = t
+    } catch (e) {}
+  </script>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

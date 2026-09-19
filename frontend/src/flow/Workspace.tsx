@@ -12,6 +12,7 @@ import {
   type Station,
   type StationDetail,
 } from './api'
+import { useTheme } from './theme'
 import { SatelliteMap, WaterMap, type Basemap, type ColorBy, type FlyTarget } from './Map'
 import {
   DistanceRow,
@@ -21,6 +22,7 @@ import {
   LegendChip,
   RecommendationCard,
   RiskBadge,
+  ThemeToggle,
   TrendCell,
   WhyDisclosure,
 } from './ui'
@@ -313,6 +315,7 @@ function Header({
   const [hits, setHits] = useState<SearchHit[]>([])
   const [open, setOpen] = useState(false)
   const alerts = useApi(api.alerts, 'alerts')
+  const { dark, toggle } = useTheme()
 
   useEffect(() => {
     if (q.trim().length < 2) {
@@ -373,6 +376,7 @@ function Header({
             <Icon name="sparkles" className="size-4" /> Ask Flow State
           </button>
         )}
+        <ThemeToggle dark={dark} onClick={toggle} />
         <button onClick={() => setAlertsOpen(!alertsOpen)} className="relative grid size-8 place-items-center rounded-[4px] border border-[var(--color-hair)] text-[var(--color-mute)] hover:text-[var(--color-ink)]">
           <Icon name="bell" className="size-4" />
           {!!alerts.data?.length && <span className="absolute right-1 top-1 size-1.5 rounded-full bg-[var(--color-risk-high)]" />}

@@ -32,9 +32,49 @@
   --color-water: #cfe0e4;
 }
 
+/* Dark theme: same token names, so every `var(--color-*)` usage adapts. Set on <html data-theme="dark">. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --color-abyss: #14181c;
+  --color-panel: #1c2126;
+  --color-panel-2: #232a30;
+  --color-hair: #2d353c;
+  --color-hair-2: #3b464f;
+  --color-ink: #e8e6df;
+  --color-mute: #a3aab3;
+  --color-mute-2: #7a838d;
+  --color-on-accent: #06201c;
+  --color-accent: #3fb0a1;
+  --color-accent-soft: #17322f;
+  --color-risk-low: #3fae80;
+  --color-risk-mod: #dba24c;
+  --color-risk-high: #e2665a;
+  --color-land: #1f2429;
+  --color-water: #1f3a41;
+}
+
 :root {
   color-scheme: light;
 }
+
+/* Landing backdrop veil: fades the map into the page ground. Uses an rgb triplet variable (not var(--color-abyss))
+   so the CSS minifier cannot bake in the light value. */
+:root { --veil: 242 239 231; }
+:root[data-theme='dark'] { --veil: 20 24 28; }
+.fs-veil {
+  background: linear-gradient(105deg, rgb(var(--veil) / 0.94) 0%, rgb(var(--veil) / 0.86) 38%, rgb(var(--veil) / 0.5) 70%, rgb(var(--veil) / 0.25) 100%);
+}
+:root[data-theme='dark'] .fs-veil {
+  background: linear-gradient(105deg, rgb(var(--veil) / 0.97) 0%, rgb(var(--veil) / 0.93) 40%, rgb(var(--veil) / 0.72) 72%, rgb(var(--veil) / 0.45) 100%);
+}
+:root[data-theme='dark'] .leaflet-tooltip {
+  background: var(--color-panel);
+  color: var(--color-ink);
+  border-color: var(--color-hair-2);
+  box-shadow: 0 6px 20px -8px rgba(0, 0, 0, 0.7);
+}
+:root[data-theme='dark'] .leaflet-tooltip-top::before { border-top-color: var(--color-panel); }
+:root[data-theme='dark'] .leaflet-tooltip-right::before { border-right-color: var(--color-panel); }
 
 html,
 body,
