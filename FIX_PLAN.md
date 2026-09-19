@@ -1,5 +1,15 @@
 # Aqua-Sense — Fix Plan
 
+## 2026-09-19 (later): evidence-driven model redesign superseded the numbers below
+
+Everything in this file predates the model redesign in `AQUA_SENSE_PROJECT_PLAN.md` §11 and
+`data/ground_truth/data_source_log.md` §4. In short: the low out-of-fold R² for DO/BOD/turbidity noted
+throughout this checklist is not a defect to keep chasing — a variance decomposition confirmed 85-100% of
+each target's variance is between-station, invisible to a single satellite visit. Pollution **screening**
+(binary, e.g. BOD>3 mg/L, out-of-fold AUC ~0.75) is now the headline deliverable; row-level regression is
+kept as a secondary, explicitly flagged result. This file's checklist below is left as the historical
+record of what was reviewed and fixed up to that point; it is not being rewritten.
+
 # Status (updated 2026-09-19)
 
 Ticked boxes below have evidence (code + tests, or a run recorded in `reports/`). Items left open, and why:
