@@ -4,7 +4,8 @@ Everything the UI shows comes from artifacts the pipeline already produced:
 
   * ``data/processed/train_real_large.parquet`` (falls back to ``train_real.parquet``): CPCB measurements joined to
     Sentinel-2 scenes, one row per (station, visit)
-  * ``reports/real/screening_shortlist.csv``: out-of-fold BOD > 3 mg/L breach probability per station (the PRIMARY model)
+  * ``reports/real/screening_oof.parquet``: out-of-fold P(BOD > 3 mg/L) per visit (the PRIMARY model); a station's
+    breach probability is the mean over its visits. Falls back to ``screening_shortlist.csv`` (older layout).
   * ``reports/real/screening_metrics.json`` / ``dataset_summary*.json``: validation numbers and dataset facts
 
 Nothing here invents data. Where the UI mock-up had content the backend has no source for (sewage outlets, STPs,
@@ -118,14 +119,23 @@ class Store:
 
         self.screening = read_json("screening_metrics.json")
         self.dataset = read_json("dataset_summary_large.json") or read_json("dataset_summary.json")
-        sl = real / "screening_shortlist.csv"
-        self.shortlist = pd.read_csv(sl) if sl.exists() else pd.DataFrame(columns=["site", "breach_probability"])
-        self._prob = self.shortlist.drop_duplicates("site").set_index("site")["breach_probability"].to_dict()
+        self._prob = self._load_probabilities(real)
 
         self.stations = self._build_stations()
         self._by_id = self.stations.set_index("id", drop=False)
         self._year_cache: dict[int, pd.DataFrame] = {}
         self.years = sorted(int(y) for y in t["year"].unique())
+
+    @staticmethod
+    def _load_probabilities(real: Path) -> dict:
+        oof = real / "screening_oof.parquet"
+        if oof.exists():
+            o = pd.read_parquet(oof)
+            return o.groupby("site")["bod_gt_3_proba"].mean().dropna().to_dict()
+        sl = real / "screening_shortlist.csv"
+        if sl.exists():
+            return pd.read_csv(sl).drop_duplicates("site").set_index("site")["breach_probability"].to_dict()
+        return {}
 
     # ------------------------------------------------------------------ station table
     def _build_stations(self) -> pd.DataFrame:
@@ -345,6 +355,9 @@ class Store:
     def overview(self, state: str | None = None) -> dict:
         s = self.stations if not state else self.stations[self.stations["state"] == state]
         m = self.screening.get("targets", {}).get("bod_gt_3", {})
+        # metrics layout changed between pipeline versions: auc/roc_auc, "10%"/"top_10pct"
+        p10 = (m.get("precision_at_k") or {}).get("10%", (m.get("precision_at_k") or {}).get("top_10pct"))
+        base = m.get("base_rate")
         latest_bod = s["bod"].dropna()
         return {
             "scope": state or "India",
@@ -359,10 +372,11 @@ class Store:
             "date_range": [self.table["date"].min().strftime("%d %b %Y"), self.table["date"].max().strftime("%d %b %Y")],
             "model": {
                 "target": "BOD > 3 mg/L (CPCB Class B/C limit)",
-                "roc_auc": m.get("roc_auc"), "base_rate": m.get("base_rate"),
-                "precision_top_10pct": (m.get("precision_at_k") or {}).get("top_10pct"),
-                "lift_top_10pct": (m.get("lift_at_k") or {}).get("top_10pct"),
-                "validation": self.screening.get("validation"), "n": m.get("n"),
+                "roc_auc": m.get("auc", m.get("roc_auc")), "base_rate": base,
+                "precision_top_10pct": p10,
+                "lift_top_10pct": (p10 / base) if p10 and base else None,
+                "validation": self.screening.get("validation", "5-fold site-blocked spatial CV, out-of-fold probabilities"),
+                "n": m.get("n"),
             },
             "thresholds": {"high": P_HIGH, "mod": P_MOD},
             "table": self.table_name,
