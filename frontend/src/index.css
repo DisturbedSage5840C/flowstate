@@ -1,0 +1,143 @@
+@import url('https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import 'leaflet/dist/leaflet.css';
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Public Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', ui-serif, Georgia, serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* Light cartographic-editorial ground */
+  --color-abyss: #f2efe7;   /* app / paper ground */
+  --color-panel: #ffffff;   /* surfaces, sidebars */
+  --color-panel-2: #f7f4ec; /* insets, wells */
+  --color-hair: #e5e0d3;    /* hairlines */
+  --color-hair-2: #d2ccbc;  /* stronger dividers */
+  --color-ink: #23262b;     /* primary text */
+  --color-mute: #616873;    /* secondary text */
+  --color-mute-2: #98968c;  /* tertiary / captions */
+  --color-on-accent: #ffffff;
+
+  /* Deep spruce-teal accent */
+  --color-accent: #0f6f66;
+  --color-accent-soft: #e2efec;
+
+  /* Risk scale — muted, sophisticated. The backbone; never a fourth colour. */
+  --color-risk-low: #2f7d5b;
+  --color-risk-mod: #c0872d;
+  --color-risk-high: #bc493a;
+
+  /* Cartography */
+  --color-land: #ece7da;
+  --color-water: #cfe0e4;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  background: var(--color-abyss);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv05', 'ss01';
+  -webkit-font-smoothing: antialiased;
+}
+
+.display {
+  font-family: var(--font-serif);
+  font-optical-sizing: auto;
+  letter-spacing: -0.01em;
+}
+
+.tnum {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.6875rem;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-hair-2) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-hair-2);
+  border-radius: 8px;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-accent) 22%, transparent);
+}
+
+@keyframes fs-slide-in {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.fs-slide-in { animation: fs-slide-in 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
+
+@keyframes fs-pulse {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 0.35; }
+}
+.fs-pulse { animation: fs-pulse 2.4s ease-in-out infinite; }
+
+@keyframes fs-ping {
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.55; }
+  70%, 100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
+}
+.fs-ping { animation: fs-ping 2s ease-out infinite; }
+
+@keyframes fs-fade {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fs-fade { animation: fs-fade 0.3s ease both; }
+
+/* ── Leaflet integration ── */
+.leaflet-container {
+  background: var(--color-abyss);
+  font-family: var(--font-sans);
+  outline: none;
+}
+.leaflet-control-zoom {
+  border: 1px solid var(--color-hair) !important;
+  border-radius: 6px !important;
+  overflow: hidden;
+  box-shadow: 0 4px 16px -8px rgba(30, 40, 50, 0.4) !important;
+}
+.leaflet-control-zoom a {
+  background: var(--color-panel) !important;
+  color: var(--color-ink) !important;
+  border-color: var(--color-hair) !important;
+}
+.leaflet-control-zoom a:hover {
+  background: var(--color-panel-2) !important;
+}
+.leaflet-control-attribution {
+  background: color-mix(in oklab, var(--color-panel) 82%, transparent) !important;
+  color: var(--color-mute-2) !important;
+  font-family: var(--font-mono);
+  font-size: 9px !important;
+}
+.leaflet-control-attribution a { color: var(--color-mute) !important; }
+.fs-static .leaflet-tile-pane { opacity: 0.85; }
+.fs-marker-pulse { animation: fs-pulse 2.4s ease-in-out infinite; }

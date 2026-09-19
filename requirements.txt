@@ -37,5 +37,9 @@ plotly>=7.1.0
 matplotlib>=3.11.0
 seaborn>=0.13.0
 
+# API for the Flow State UI (frontend/)
+fastapi>=0.110.0
+uvicorn>=0.29.0
+
 # Testing
 pytest>=7.4.0
