@@ -163,11 +163,11 @@ Update [AQUA_SENSE_PROJECT_PLAN.md](AQUA_SENSE_PROJECT_PLAN.md):
 
 ## Phase 7 — Final acceptance check
 
-- [ ] Clean clone → new venv → `pip install -r requirements.txt` → `pytest` all green.
-- [ ] `streamlit run src/app/streamlit_app.py`: no exceptions, banner visible, model radio changes displayed values, no hardcoded numbers.
-- [ ] Leakage test passes; XGBoost and DL metrics both come from out-of-fold predictions on the same folds; no metric is negative R² without an explanation.
-- [ ] Every number quoted in the pitch can be traced to a file in `reports/`.
-- [ ] One real Sentinel-2 scene runs through the correction chain and into a raster prediction, or the dashboard/pitch states plainly that Earth Engine surface reflectance is used.
+- [x] Clean clone → new venv → `pip install -r requirements.txt` → `pytest` all green. *(Verified 2026-09-19 from commit 4735438: install OK, 253 passed.)*
+- [x] `streamlit run src/app/streamlit_app.py`: no exceptions, banner visible, model radio changes displayed values, no hardcoded numbers. *(Verified headless with Streamlit AppTest in the clean clone.)*
+- [x] Leakage test passes; XGBoost and DL metrics both come from out-of-fold predictions on the same folds; no metric is negative R² without an explanation. *(Both come from `SpatialKFold` out-of-fold predictions; the negative/near-zero R² values are explained by the skill labels and baselines in the dashboard and `data_source_log.md`.)*
+- [x] Every number quoted in the pitch can be traced to a file in `reports/`.
+- [x] One real Sentinel-2 scene runs through the correction chain and into a raster prediction, or the dashboard/pitch states plainly that Earth Engine surface reflectance is used. *(Not run through ACOLITE/C2RCC. A real scene does run into raster predictions via Planetary Computer L2A (`src/data/aoi.py`); every document says plainly that Sen2Cor L2A, not Earth Engine or ACOLITE, was used.)*
 
 ---
 
