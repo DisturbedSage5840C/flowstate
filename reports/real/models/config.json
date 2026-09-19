@@ -11,7 +11,19 @@
     "bdm2",
     "bdm3",
     "red_green",
-    "nir"
+    "nir",
+    "is_river",
+    "is_lake",
+    "is_reservoir",
+    "is_winter",
+    "is_summer",
+    "is_monsoon",
+    "rain_3d_mm",
+    "rain_7d_mm",
+    "rain_14d_mm",
+    "rain_30d_mm",
+    "dist_nearest_city_km",
+    "urban_load_index"
   ],
   "targets": [
     "do",

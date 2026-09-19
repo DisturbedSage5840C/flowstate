@@ -17,7 +17,9 @@ from src.models.baselines import mean_baseline_oof, median_baseline_oof
 from src.models.metrics import MetricsReporter
 from src.models.xgboost_pipeline import WaterQualityXGB
 
-TABLE = nwdp.ROOT / "data" / "processed" / "train_real.parquet"
+TABLE_LARGE = nwdp.ROOT / "data" / "processed" / "train_real_large.parquet"
+TABLE_SMALL = nwdp.ROOT / "data" / "processed" / "train_real.parquet"
+TABLE = TABLE_LARGE if TABLE_LARGE.exists() else TABLE_SMALL
 OUT = nwdp.ROOT / "reports" / "real"
 
 
@@ -59,7 +61,7 @@ def main():
     reporter.print_table(metrics[metrics.model == "xgboost_oof"].drop(columns="model"))
 
     summary = {
-        "data": "real CPCB in-situ + Sentinel-2 L2A (train_real.parquet)",
+        "data": f"real CPCB in-situ + Sentinel-2 L2A ({TABLE.name})",
         "validation": f"{args.folds}-fold site-blocked spatial CV, out-of-fold predictions",
         "rows": int(len(df)),
         "stations": int(df["site"].nunique()),

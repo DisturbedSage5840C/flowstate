@@ -1,0 +1,128 @@
+{
+  "target": "wqi_tier",
+  "n": 5772,
+  "classes": [
+    "Excellent",
+    "Good",
+    "Moderate",
+    "Poor",
+    "Very Poor"
+  ],
+  "model": {
+    "accuracy": 0.3270963270963271,
+    "macro_f1": 0.23855428384624716,
+    "report": {
+      "Excellent": {
+        "precision": 0.05263157894736842,
+        "recall": 0.004608294930875576,
+        "f1-score": 0.00847457627118644,
+        "support": 217.0
+      },
+      "Good": {
+        "precision": 0.27943760984182775,
+        "recall": 0.15481986368062317,
+        "f1-score": 0.19924812030075187,
+        "support": 1027.0
+      },
+      "Moderate": {
+        "precision": 0.3643282594308405,
+        "recall": 0.6154276131917272,
+        "f1-score": 0.45770110164207023,
+        "support": 1789.0
+      },
+      "Poor": {
+        "precision": 0.2468723936613845,
+        "recall": 0.18362282878411912,
+        "f1-score": 0.21060120953397368,
+        "support": 1612.0
+      },
+      "Very Poor": {
+        "precision": 0.34371754932502596,
+        "recall": 0.2937000887311446,
+        "f1-score": 0.3167464114832536,
+        "support": 1127.0
+      },
+      "accuracy": 0.3270963270963271,
+      "macro avg": {
+        "precision": 0.25739747824128945,
+        "recall": 0.25043573786369794,
+        "f1-score": 0.23855428384624716,
+        "support": 5772.0
+      },
+      "weighted avg": {
+        "precision": 0.30067822431260666,
+        "recall": 0.3270963270963271,
+        "f1-score": 0.29829459960980176,
+        "support": 5772.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        1,
+        30,
+        137,
+        34,
+        15
+      ],
+      [
+        3,
+        159,
+        569,
+        217,
+        79
+      ],
+      [
+        7,
+        192,
+        1101,
+        283,
+        206
+      ],
+      [
+        5,
+        134,
+        845,
+        296,
+        332
+      ],
+      [
+        3,
+        54,
+        370,
+        369,
+        331
+      ]
+    ]
+  },
+  "majority_class_baseline": {
+    "accuracy": 0.30994455994455994,
+    "macro_f1": 0.09464356566591721
+  },
+  "table": "train_real_large.parquet",
+  "feature_cols": [
+    "B2",
+    "B3",
+    "B4",
+    "B5",
+    "B6",
+    "B8",
+    "B11",
+    "ndci",
+    "bdm2",
+    "bdm3",
+    "red_green",
+    "nir",
+    "is_river",
+    "is_lake",
+    "is_reservoir",
+    "is_winter",
+    "is_summer",
+    "is_monsoon",
+    "rain_3d_mm",
+    "rain_7d_mm",
+    "rain_14d_mm",
+    "rain_30d_mm",
+    "dist_nearest_city_km",
+    "urban_load_index"
+  ]
+}

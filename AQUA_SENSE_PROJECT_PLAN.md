@@ -241,6 +241,8 @@ If a model is not clearly better by Hour 12, ship XGBoost as production and pres
 | WQI + CPCB class | done | section 9 |
 | Dashboard on real data + any-AOI map | done | `src/app/real_view.py`, `src/data/aoi.py` |
 | Dual-tier atmospheric correction (ACOLITE + C2RCC) | **not run**; wrappers + converter written, untested | `src/preprocessing/correction*.py` |
-| Earth Engine | enabled and verified live; extraction agrees with Planetary Computer (r 0.97-0.98); 8,461-row table built, not yet modelled | `src/data/gee_extract.py`, `reports/real/backend_comparison.json` |
+| Earth Engine | enabled and verified live; extraction agrees with Planetary Computer (r 0.97-0.98); 8,461-row table built and now the default training table | `src/data/gee_extract.py`, `reports/real/backend_comparison.json` |
 | Kaggle datasets | Ganga/Sangam used only to validate Landsat temperature (its pH/conductivity are unreliable) | `src/data/kaggle_sources.py` |
-| R² > 0.85 | **not achieved**; out-of-fold R² is near zero | `reports/real/metrics_table.csv` |
+| Turbidity formula recalibration | literature Nechad/Dogliotti had an 11.7x median overestimate vs measured CPCB turbidity; refit per-water-body-type power law (`turbidity_calibrated`) brings the median ratio to ~1.0 and raises pooled Spearman 0.23 -> 0.33 | `src/features/feature_engineering.py`, `reports/real/empirical_formula_validation.json` |
+| WQI-tier classifier (satellite-only) | done; leakage-free (features exclude do/bod/ph/turbidity/etc.); OOF accuracy 0.29 vs 0.27 majority-class baseline, macro F1 0.21 vs 0.14 — a real but modest edge | `src/models/tier_classifier.py`, `reports/real/tier_classification_metrics.json` |
+| R² > 0.85 | **not achieved and not achievable with this signal**; out-of-fold raw R² stays near zero even after recalibration and more data — this is a genuine ceiling of single-satellite-scene optical reflectance for chemistry parameters under honest spatial CV, not a bug. Rank correlation (Spearman 0.14-0.24) and log-scale R² are the honest headline numbers and both beat naive baselines | `reports/real/metrics_table.csv` |
