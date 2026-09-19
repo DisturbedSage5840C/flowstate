@@ -21,7 +21,7 @@ pip install -r requirements.txt
 ```
 
 No logins are needed for the real-data pipeline (CPCB NWDP and Planetary Computer are open).
-Optional: Kaggle (`~/.kaggle/access_token`) and Google Earth Engine (`earthengine authenticate`).
+Optional: Kaggle (`~/.kaggle/access_token`) and Google Earth Engine (step-by-step in `docs/EARTH_ENGINE_SETUP.md`).
 **Never commit credentials** (`.gitignore` blocks common token file names).
 
 ## Real-data pipeline
@@ -31,6 +31,7 @@ python -m scripts.fetch_insitu                      # 1. download CPCB surface-w
 python -m scripts.extract_satellite --per-state 100 # 2. Sentinel-2 reflectance at station-visits (resumable, ~1 s/visit)
 python -m scripts.build_real_training_table         # 3. join -> data/processed/train_real.parquet + reports/real/dataset_summary.json
 python -m scripts.validate_empirical_formulas       # 4. test literature formulas against the real measurements
+python -m scripts.validate_landsat_temperature      #    (optional, needs a Kaggle token) Landsat temperature vs in-situ IoT sensors
 python -m scripts.train_real_models --trials 30     # 5. XGBoost, out-of-fold spatial CV, baselines, SHAP -> reports/real/
 streamlit run src/app/streamlit_app.py              # dashboard (real-data mode when train_real.parquet exists)
 ```

@@ -1,0 +1,37 @@
+{
+  "insitu_days_tested": 88,
+  "landsat_retrievals": 9,
+  "independent_landsat_scenes": 6,
+  "status_counts": {
+    "no_scene": 75,
+    "ok": 9,
+    "no_clear_water": 4
+  },
+  "overall": {
+    "n": 9,
+    "bias_c": 2.0,
+    "rmse_c": 6.25,
+    "mae_c": 5.58,
+    "pearson_r": 0.884
+  },
+  "by_series": {
+    "ganga": {
+      "n": 3,
+      "bias_c": 1.47,
+      "rmse_c": 6.47,
+      "mae_c": 5.36,
+      "pearson_r": 0.872
+    },
+    "sangam": {
+      "n": 6,
+      "bias_c": 2.27,
+      "rmse_c": 6.13,
+      "mae_c": 5.69,
+      "pearson_r": 0.902
+    }
+  },
+  "bias_when_insitu_at_least_25c": 4.93,
+  "bias_when_insitu_below_25c": -3.84,
+  "interpretation": "Landsat ST is a skin temperature. It follows the seasonal cycle but exaggerates its amplitude (too warm in the hot-season scenes, too cool in winter); do not use it as an accurate water temperature (e.g. for DO saturation).",
+  "note": "Sensor coordinates are those of the nearest CPCB stations (assumption); the in-situ value is the median of plausible readings between 09:00 and 14:00 local time."
+}
