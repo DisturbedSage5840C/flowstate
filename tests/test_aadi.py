@@ -112,3 +112,29 @@ def test_correct_scene_converts_acolite_output_and_falls_back_on_failure(tmp_pat
     monkeypatch.setattr(correction, "run_acolite", boom)
     res = correction.correct_scene("S2A_MSIL1C_20200129T051041_N0208_R019_T43PGQ.SAFE", site, method="acolite")
     assert res["method"] == "gee_sr_fallback" and "java missing" in res["error"]
+
+
+def test_choose_threshold_rejects_otsu_on_land_dominated_samples():
+    from src.preprocessing.masking import choose_threshold, otsu_threshold
+    rng = np.random.default_rng(1)
+    land = np.concatenate([rng.normal(-0.55, 0.05, 4000), rng.normal(-0.30, 0.06, 4000)])   # two LAND clusters
+    water = rng.normal(0.4, 0.08, 150)                                                       # ~2 % water
+    sample = np.concatenate([land, water])
+    assert otsu_threshold(sample) < -0.3                                  # plain Otsu splits the land (the bug)
+    thr, method = choose_threshold(sample)
+    assert thr == 0.0 and method.startswith("default")
+
+
+def test_choose_threshold_accepts_a_genuinely_bimodal_sample():
+    from src.preprocessing.masking import choose_threshold
+    rng = np.random.default_rng(2)
+    sample = np.concatenate([rng.normal(-0.4, 0.08, 3000), rng.normal(0.45, 0.08, 2500)])
+    thr, method = choose_threshold(sample)
+    assert method == "otsu" and -0.1 < thr < 0.2
+
+
+def test_otsu_returns_the_middle_of_the_gap_for_well_separated_clusters():
+    from src.preprocessing.masking import otsu_threshold
+    rng = np.random.default_rng(3)
+    sample = np.concatenate([rng.normal(-0.6, 0.02, 2000), rng.normal(0.6, 0.02, 2000)])
+    assert abs(otsu_threshold(sample)) < 0.1

@@ -1,0 +1,79 @@
+thresholds:
+  beas_amritsar:
+    method: 'default (otsu -0.36 rejected: eta=0.45, share=0.29)'
+    n_pixels: 5000
+    period: 2020-01-01..2020-06-30
+    threshold: 0.0
+    tuned_on: '2026-09-19'
+  bellandur:
+    method: 'default (otsu -0.38 rejected: eta=0.63, share=0.46)'
+    n_pixels: 5000
+    period: 2020-01-01..2020-06-30
+    threshold: 0.0
+    tuned_on: '2026-09-19'
+  buddha_nullah_ludhiana:
+    method: 'default (otsu -0.28 rejected: eta=0.66, share=0.70)'
+    n_pixels: 5000
+    period: 2020-01-01..2020-06-30
+    threshold: 0.0
+    tuned_on: '2026-09-19'
+  chilika:
+    method: otsu
+    n_pixels: 5000
+    period: 2020-01-01..2020-06-30
+    threshold: 0.105
+    tuned_on: '2026-09-19'
+  dal_lake:
+    method: otsu
+    n_pixels: 5000
+    period: 2020-01-01..2020-06-30
+    threshold: 0.066
+    tuned_on: '2026-09-19'
+  ganga_kanpur:
+    method: 'default (otsu -0.00 rejected: eta=0.60, share=0.02)'
+    n_pixels: 5000
+    period: 2020-01-01..2020-06-30
+    threshold: 0.0
+    tuned_on: '2026-09-19'
+  ganga_varanasi:
+    method: 'default (otsu +0.02 rejected: eta=0.72, share=0.03)'
+    n_pixels: 5000
+    period: 2020-01-01..2020-06-30
+    threshold: 0.0
+    tuned_on: '2026-09-19'
+  ghaggar_patiala:
+    method: 'default (otsu -0.34 rejected: eta=0.59, share=0.70)'
+    n_pixels: 5000
+    period: 2020-01-01..2020-06-30
+    threshold: 0.0
+    tuned_on: '2026-09-19'
+  hussain_sagar:
+    method: otsu
+    n_pixels: 4999
+    period: 2020-01-01..2020-06-30
+    threshold: 0.168
+    tuned_on: '2026-09-19'
+  sutlej_ludhiana:
+    method: 'default (otsu -0.32 rejected: eta=0.74, share=0.32)'
+    n_pixels: 5000
+    period: 2020-01-01..2020-06-30
+    threshold: 0.0
+    tuned_on: '2026-09-19'
+  ulsoor:
+    method: 'default (otsu +0.12 rejected: eta=0.68, share=0.03)'
+    n_pixels: 5046
+    period: 2020-01-01..2020-06-30
+    threshold: 0.0
+    tuned_on: '2026-09-19'
+  varthur:
+    method: 'default (otsu -0.38 rejected: eta=0.60, share=0.31)'
+    n_pixels: 4900
+    period: 2020-01-01..2020-06-30
+    threshold: 0.0
+    tuned_on: '2026-09-19'
+  yamuna_delhi:
+    method: 'default (otsu +0.07 rejected: eta=0.54, share=0.03)'
+    n_pixels: 5000
+    period: 2020-01-01..2020-06-30
+    threshold: 0.0
+    tuned_on: '2026-09-19'

@@ -31,6 +31,9 @@ def main():
     ap.add_argument("--min-visits", type=int, default=12, help="with --dense: minimum labelled visits per station")
     ap.add_argument("--limit", type=int, help="only the first N selected visits (smoke test)")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--backend", choices=["stac", "gee"], default="stac",
+                    help="stac: Planetary Computer (no login); gee: Google Earth Engine (docs/EARTH_ENGINE_SETUP.md)")
+    ap.add_argument("--project", default="prayashack", help="Earth Engine Cloud project (backend gee)")
     ap.add_argument("--out", default=str(OUT))
     args = ap.parse_args()
 
@@ -45,8 +48,12 @@ def main():
         visits = visits.head(args.limit)
     print(f"selected {len(visits):,} visits at {visits['station'].nunique():,} stations in "
           f"{visits['state'].nunique()} states")
-    result = StacExtractor(ExtractionConfig(), workers=args.workers).extract(
-        visits[["station", "lat", "lon", "date"]], cache_path=args.out)
+    if args.backend == "gee":
+        from src.data.gee_extract import GeeExtractor
+        extractor = GeeExtractor(ExtractionConfig(), project=args.project)
+    else:
+        extractor = StacExtractor(ExtractionConfig(), workers=args.workers)
+    result = extractor.extract(visits[["station", "lat", "lon", "date"]], cache_path=args.out)
     print(result["status"].value_counts().to_string())
     print("wrote", args.out)
 

@@ -147,15 +147,38 @@ def merge_tiles(paths: list[Path | str], dest: Path | str) -> Path:
     return Path(dest)
 
 
+def download_image(img: ee.Image, region, scale: int, dest: Path | str, crs: str = "EPSG:4326",
+                   timeout: int = 600) -> Path:
+    """Download an image window as a GeoTIFF with Earth Engine's own download URL (no geemap needed).
+
+    The request must stay below MAX_DOWNLOAD_BYTES; callers tile large regions first (see tile_bounds).
+    """
+    import requests
+
+    url = img.getDownloadURL({"scale": scale, "region": region, "crs": crs, "format": "GEO_TIFF"})
+    r = requests.get(url, timeout=timeout)
+    r.raise_for_status()
+    if r.content[:2] == b"PK":                                   # some responses arrive zipped
+        import io
+        import zipfile
+        with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
+            name = next(n for n in zf.namelist() if n.lower().endswith((".tif", ".tiff")))
+            payload = zf.read(name)
+    else:
+        payload = r.content
+    dest = Path(dest)
+    dest.write_bytes(payload)
+    return dest
+
+
 def export_scene(site: Site, col: ee.ImageCollection, date: str, sensor: str = "S2",
                  out_dir: Path | str = ROOT / "data" / "interim", scale: int | None = None) -> Path:
     """Download one day's mosaic as {site}_{sensor}_{YYYYMMDD}.tif in the band contract order.
 
     Sites whose export would exceed Earth Engine's direct-download limit are split into tiles that are
     downloaded separately and merged. UNTESTED against a live Earth Engine account (only the size/tiling/merge
-    logic is unit-tested).
+    logic is unit-tested; the small-site path was verified live for Ulsoor Lake).
     """
-    import geemap
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     img = col.filter(ee.Filter.eq("date", date)).mosaic().unmask(-9999)
@@ -163,14 +186,11 @@ def export_scene(site: Site, col: ee.ImageCollection, date: str, sensor: str = "
     scale = scale or (10 if sensor == "S2" else 30)
     tiles = tile_bounds(site.bounds(), scale, len(OUT_BANDS[sensor]))
     if len(tiles) == 1:
-        geemap.ee_export_image(img, filename=str(dest), scale=scale, region=site_region(site),
-                               file_per_band=False, crs="EPSG:4326")
-        return dest
+        return download_image(img, site_region(site), scale, dest)
     parts = []
     for i, (w, s, e, n) in enumerate(tiles):
         part = out_dir / f"{dest.stem}_tile{i:02d}.tif"
-        geemap.ee_export_image(img, filename=str(part), scale=scale, region=ee.Geometry.Rectangle([w, s, e, n]),
-                               file_per_band=False, crs="EPSG:4326")
+        download_image(img, ee.Geometry.Rectangle([w, s, e, n]), scale, part)
         parts.append(part)
     merge_tiles(parts, dest)
     for part in parts:
