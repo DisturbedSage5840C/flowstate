@@ -18,7 +18,7 @@ cited as data.
 | Turbidity (NTU) | CPCB NWDP physical parameters | **real, measured** (mostly 2020) |
 | pH, conductivity, ammonia-N, SAR, boron, coliform | CPCB NWDP | real; used for WQI and the CPCB best-use class |
 | Chlorophyll-a | none | **not available** — CPCB does not measure it; `chl_a_empirical` is a formula estimate, never validated |
-| Water temperature | NWDP column is empty | filled only where a Landsat 8/9 thermal retrieval exists (`scripts/extract_temperature.py`); otherwise NaN |
+| Water temperature | NWDP column is empty | Landsat 8/9 thermal retrieval where available (`scripts/extract_temperature.py`); otherwise NaN. **Biased skin temperature** (see the Kaggle validation below), a seasonal indicator only |
 
 ## 2. Sources
 
@@ -58,10 +58,27 @@ Loaded: ~84,000 visits at ~4,000 stations in 36 states/UTs (2019-2024), of which
 - `lwir11` (ST_B10) + `qa_pixel` water/clear bits; median °C of clear water pixels within 500 m, ±5 days.
 - Code: `src/data/landsat_temp.py`, `scripts/extract_temperature.py`.
 
+### Kaggle IoT sensors, Prayagraj (Ganga + Sangam) — used only for validation
+- `dal4206/dataset-of-river-ganga-and-sangam-india` (downloaded via the Kaggle API; `src/data/kaggle_sources.py`).
+  46,528 + 52,363 readings, one per minute, but only ~55 days per file (Jan 2019 – Feb 2020).
+- Checked against CPCB's own stations at the same reach and dates (DO median 8.2, pH 6.8–8.5):
+  - **pH unreliable**: 83–85 % of readings exceed 8.5, monthly medians 9–13. Excluded.
+  - **Conductivity unreliable**: scale jumps between ~1 and ~900 µS/cm. Excluded. ORP, WQI and Status not used.
+  - **DO plausible** (median 7.6–8.1) apart from impossible values (> 14 mg/L, dropped) and a suspicious Jan 2019.
+  - **Temperature plausible**: seasonal cycle 17 → 29 °C. Used, but only as a *validation reference*.
+- Location is not available through the API. Coordinates are those of the nearest CPCB stations (assumption, ± a few km).
+  A value of 78°54′E sometimes quoted for the confluence is a typo; Prayagraj is near 81.9°E.
+- **Landsat thermal validation** (`scripts/validate_landsat_temperature.py`, `reports/real/landsat_temperature_validation.json`):
+  only 9 of 88 in-situ days had a usable Landsat pass (6 independent scenes). Correlation is high (r ≈ 0.88) but Landsat
+  surface temperature is a *skin* temperature, and its error changes sign with the season: the overall mean bias is only
+  +2 °C, but it is **+8 to +10 °C in the hot-season scenes (Sept 2019, May 2019)** and **−3 to −4 °C in the winter scenes
+  (Dec 2019, Jan–Feb 2020)**, i.e. the seasonal amplitude is exaggerated (RMSE 6 °C). Consequently `temp_surface` in
+  `train_real.parquet` follows the seasonal cycle but is **not an accurate water temperature**; an error of 8–10 °C changes
+  the oxygen-saturation value by about 2 mg/L. Treat it as a seasonal indicator only.
+
 ### Sources reviewed and NOT used
 | Source | Verdict |
 |---|---|
-| Kaggle `dal4206/dataset-of-river-ganga-and-sangam-india` (IoT pH/DO/temp/EC, Prayagraj, 2019-20) | usable in principle; **not downloaded** — no Kaggle credentials were available in the environment |
 | Kaggle `anbarivan/indian-water-quality-data` (CPCB, 2003-2014) | predates Sentinel-2 (launched 2015), so it cannot be matched to the imagery |
 | AIKosh JJM water source quality | drinking-water/groundwater points, not satellite-visible water bodies |
 | Bhoonidhi (ISRO) | alternative imagery portal; not needed |
