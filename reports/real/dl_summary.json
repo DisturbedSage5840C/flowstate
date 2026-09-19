@@ -1,0 +1,500 @@
+{
+  "model": "CNN-BiLSTM-masked-attention over per-station visit windows",
+  "validation": "5-fold site-blocked spatial CV, out-of-fold predictions",
+  "rows": 2517,
+  "stations": 913,
+  "window": 3,
+  "max_gap_days": 90.0,
+  "share_of_samples_with_history": 0.41477949940405245,
+  "mean_window_length": 1.6352800953516091,
+  "folds": [
+    {
+      "fold": 0,
+      "n_train": 1643,
+      "n_early_stop": 288,
+      "n_heldout": 586,
+      "best_epoch": 16
+    },
+    {
+      "fold": 1,
+      "n_train": 1641,
+      "n_early_stop": 270,
+      "n_heldout": 606,
+      "best_epoch": 14
+    },
+    {
+      "fold": 2,
+      "n_train": 1876,
+      "n_early_stop": 284,
+      "n_heldout": 357,
+      "best_epoch": 10
+    },
+    {
+      "fold": 3,
+      "n_train": 1746,
+      "n_early_stop": 275,
+      "n_heldout": 496,
+      "best_epoch": 8
+    },
+    {
+      "fold": 4,
+      "n_train": 1794,
+      "n_early_stop": 251,
+      "n_heldout": 472,
+      "best_epoch": 26
+    }
+  ],
+  "artifact": "C:\\Users\\aadib\\prayashack\\reports\\real\\dl_artifact.pt",
+  "metrics": [
+    {
+      "model": "dl_oof",
+      "target": "bod",
+      "water_body_type": "lake",
+      "n": 421,
+      "R2": -0.014729360049905438,
+      "RMSE": 9.370920038779293,
+      "MAE": 4.523139682569309,
+      "R2_log": 0.15673987139889156
+    },
+    {
+      "model": "dl_oof",
+      "target": "bod",
+      "water_body_type": "overall",
+      "n": 2080,
+      "R2": -0.021811449435658714,
+      "RMSE": 16.0229007787414,
+      "MAE": 3.9023626679742796,
+      "R2_log": 0.08561474178713968
+    },
+    {
+      "model": "dl_oof",
+      "target": "bod",
+      "water_body_type": "reservoir",
+      "n": 198,
+      "R2": 0.020331114590475652,
+      "RMSE": 8.206587701352863,
+      "MAE": 2.743753085236032,
+      "R2_log": 0.28754080706816376
+    },
+    {
+      "model": "dl_oof",
+      "target": "bod",
+      "water_body_type": "river",
+      "n": 969,
+      "R2": -0.0403398161955133,
+      "RMSE": 10.925625801980438,
+      "MAE": 3.377011824743306,
+      "R2_log": 0.004097323322508117
+    },
+    {
+      "model": "dl_oof",
+      "target": "bod",
+      "water_body_type": "unknown",
+      "n": 492,
+      "R2": -0.023997493888947785,
+      "RMSE": 27.350177303326536,
+      "MAE": 4.872123930837041,
+      "R2_log": -0.14731235937928444
+    },
+    {
+      "model": "dl_oof",
+      "target": "do",
+      "water_body_type": "lake",
+      "n": 409,
+      "R2": -0.2847911888379877,
+      "RMSE": 2.448714386038918,
+      "MAE": 1.8232229554849813,
+      "R2_log": NaN
+    },
+    {
+      "model": "dl_oof",
+      "target": "do",
+      "water_body_type": "overall",
+      "n": 2421,
+      "R2": -0.019670490800486107,
+      "RMSE": 2.0350054639429174,
+      "MAE": 1.482826530649598,
+      "R2_log": NaN
+    },
+    {
+      "model": "dl_oof",
+      "target": "do",
+      "water_body_type": "reservoir",
+      "n": 242,
+      "R2": 0.1339164625670084,
+      "RMSE": 1.9923328595695993,
+      "MAE": 1.4976675425317172,
+      "R2_log": NaN
+    },
+    {
+      "model": "dl_oof",
+      "target": "do",
+      "water_body_type": "river",
+      "n": 1190,
+      "R2": 0.019952453068957876,
+      "RMSE": 1.8923804711799412,
+      "MAE": 1.3596555872735647,
+      "R2_log": NaN
+    },
+    {
+      "model": "dl_oof",
+      "target": "do",
+      "water_body_type": "unknown",
+      "n": 580,
+      "R2": -0.050367348096633346,
+      "RMSE": 2.013491937595632,
+      "MAE": 1.4893088754501767,
+      "R2_log": NaN
+    },
+    {
+      "model": "dl_oof",
+      "target": "turbidity",
+      "water_body_type": "lake",
+      "n": 168,
+      "R2": -0.07584029029105999,
+      "RMSE": 36.58741967850526,
+      "MAE": 14.46569927945633,
+      "R2_log": -0.08335898135602382
+    },
+    {
+      "model": "dl_oof",
+      "target": "turbidity",
+      "water_body_type": "overall",
+      "n": 868,
+      "R2": -0.05883158261451671,
+      "RMSE": 61.072367679596475,
+      "MAE": 20.887841479974767,
+      "R2_log": -0.0073314453910839905
+    },
+    {
+      "model": "dl_oof",
+      "target": "turbidity",
+      "water_body_type": "reservoir",
+      "n": 78,
+      "R2": -0.13572632043693034,
+      "RMSE": 57.370118537275985,
+      "MAE": 23.514994582496463,
+      "R2_log": 0.021884073622593814
+    },
+    {
+      "model": "dl_oof",
+      "target": "turbidity",
+      "water_body_type": "river",
+      "n": 403,
+      "R2": -0.07608387581384313,
+      "RMSE": 58.61659883683511,
+      "MAE": 23.158195707270057,
+      "R2_log": 0.026189333298515582
+    },
+    {
+      "model": "dl_oof",
+      "target": "turbidity",
+      "water_body_type": "unknown",
+      "n": 219,
+      "R2": -0.03394471888984807,
+      "RMSE": 79.12797665560475,
+      "MAE": 20.700851498652412,
+      "R2_log": -0.09745109401831464
+    },
+    {
+      "model": "baseline_mean",
+      "target": "bod",
+      "water_body_type": "lake",
+      "n": 421,
+      "R2": -0.04901463467035483,
+      "RMSE": 9.527915402313331,
+      "MAE": 5.226810556609469,
+      "R2_log": -0.06267034502154223
+    },
+    {
+      "model": "baseline_mean",
+      "target": "bod",
+      "water_body_type": "overall",
+      "n": 2080,
+      "R2": -0.027431476382539177,
+      "RMSE": 16.066903835550207,
+      "MAE": 5.671511346498477,
+      "R2_log": -0.5673325582790565
+    },
+    {
+      "model": "baseline_mean",
+      "target": "bod",
+      "water_body_type": "reservoir",
+      "n": 198,
+      "R2": -0.15770438044999802,
+      "RMSE": 8.921169600743454,
+      "MAE": 5.530954872307488,
+      "R2_log": -1.0949501853032646
+    },
+    {
+      "model": "baseline_mean",
+      "target": "bod",
+      "water_body_type": "river",
+      "n": 969,
+      "R2": -0.056269042154518445,
+      "RMSE": 11.0089522390664,
+      "MAE": 5.3191253021844735,
+      "R2_log": -0.7414114512841794
+    },
+    {
+      "model": "baseline_mean",
+      "target": "bod",
+      "water_body_type": "unknown",
+      "n": 492,
+      "R2": -0.017023545249592598,
+      "RMSE": 27.256883813491953,
+      "MAE": 6.802631857419935,
+      "R2_log": -0.9323019851383145
+    },
+    {
+      "model": "baseline_mean",
+      "target": "do",
+      "water_body_type": "lake",
+      "n": 409,
+      "R2": -0.16676462813006565,
+      "RMSE": 2.3335305190557705,
+      "MAE": 1.6454380437497467,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_mean",
+      "target": "do",
+      "water_body_type": "overall",
+      "n": 2421,
+      "R2": -0.04028921584906109,
+      "RMSE": 2.055477382249434,
+      "MAE": 1.5055831392337158,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_mean",
+      "target": "do",
+      "water_body_type": "reservoir",
+      "n": 242,
+      "R2": -0.05492996467043243,
+      "RMSE": 2.19884096930476,
+      "MAE": 1.6645579271331998,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_mean",
+      "target": "do",
+      "water_body_type": "river",
+      "n": 1190,
+      "R2": -0.046386093357360325,
+      "RMSE": 1.9553786284922616,
+      "MAE": 1.4689038789287012,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_mean",
+      "target": "do",
+      "water_body_type": "unknown",
+      "n": 580,
+      "R2": -0.019150042144319368,
+      "RMSE": 1.983345394080895,
+      "MAE": 1.4158861825858453,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_mean",
+      "target": "turbidity",
+      "water_body_type": "lake",
+      "n": 168,
+      "R2": -0.1655472943039067,
+      "RMSE": 38.08227019032071,
+      "MAE": 23.07356956891063,
+      "R2_log": -0.9722046187875515
+    },
+    {
+      "model": "baseline_mean",
+      "target": "turbidity",
+      "water_body_type": "overall",
+      "n": 868,
+      "R2": -0.058546656396937236,
+      "RMSE": 61.064149994270934,
+      "MAE": 28.703098723210577,
+      "R2_log": -0.6971194860659538
+    },
+    {
+      "model": "baseline_mean",
+      "target": "turbidity",
+      "water_body_type": "reservoir",
+      "n": 78,
+      "R2": -0.08809860690815108,
+      "RMSE": 56.154301444068764,
+      "MAE": 33.78186088940797,
+      "R2_log": -0.762314250139638
+    },
+    {
+      "model": "baseline_mean",
+      "target": "turbidity",
+      "water_body_type": "river",
+      "n": 403,
+      "R2": -0.065354711363113,
+      "RMSE": 58.323646471927546,
+      "MAE": 29.532790674756566,
+      "R2_log": -0.4993950628302073
+    },
+    {
+      "model": "baseline_mean",
+      "target": "turbidity",
+      "water_body_type": "unknown",
+      "n": 219,
+      "R2": -0.037676096560815164,
+      "RMSE": 79.27062957194948,
+      "MAE": 29.685982707164726,
+      "R2_log": -0.9951635210304379
+    },
+    {
+      "model": "baseline_median",
+      "target": "bod",
+      "water_body_type": "lake",
+      "n": 421,
+      "R2": -0.27891745974084525,
+      "RMSE": 10.520306119838285,
+      "MAE": 5.268646080760095,
+      "R2_log": -0.5356301325656638
+    },
+    {
+      "model": "baseline_median",
+      "target": "bod",
+      "water_body_type": "overall",
+      "n": 2080,
+      "R2": -0.04194669212680391,
+      "RMSE": 16.179999771203764,
+      "MAE": 3.998798076923077,
+      "R2_log": -0.09140943002719437
+    },
+    {
+      "model": "baseline_median",
+      "target": "bod",
+      "water_body_type": "reservoir",
+      "n": 198,
+      "R2": -0.05794220341593914,
+      "RMSE": 8.528132292831788,
+      "MAE": 3.077272727272727,
+      "R2_log": -0.01550288710620129
+    },
+    {
+      "model": "baseline_median",
+      "target": "bod",
+      "water_body_type": "river",
+      "n": 969,
+      "R2": -0.05463923168870166,
+      "RMSE": 11.000455619610003,
+      "MAE": 3.3618266253869966,
+      "R2_log": -0.04770968609313564
+    },
+    {
+      "model": "baseline_median",
+      "target": "bod",
+      "water_body_type": "unknown",
+      "n": 492,
+      "R2": -0.01910699844552366,
+      "RMSE": 27.284788471061475,
+      "MAE": 4.537581300813009,
+      "R2_log": -0.014693288303425645
+    },
+    {
+      "model": "baseline_median",
+      "target": "do",
+      "water_body_type": "lake",
+      "n": 409,
+      "R2": -0.27044381822898766,
+      "RMSE": 2.4350035018023553,
+      "MAE": 1.7017114914425429,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_median",
+      "target": "do",
+      "water_body_type": "overall",
+      "n": 2421,
+      "R2": -0.059964259579991186,
+      "RMSE": 2.07482400979536,
+      "MAE": 1.4784386617100373,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_median",
+      "target": "do",
+      "water_body_type": "reservoir",
+      "n": 242,
+      "R2": -0.006399521682623144,
+      "RMSE": 2.1476683493600626,
+      "MAE": 1.5512396694214876,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_median",
+      "target": "do",
+      "water_body_type": "river",
+      "n": 1190,
+      "R2": -0.03872520209180874,
+      "RMSE": 1.9482075364401032,
+      "MAE": 1.409747899159664,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_median",
+      "target": "do",
+      "water_body_type": "unknown",
+      "n": 580,
+      "R2": -0.05608647125231503,
+      "RMSE": 2.0189661061867863,
+      "MAE": 1.4315517241379312,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_median",
+      "target": "turbidity",
+      "water_body_type": "lake",
+      "n": 168,
+      "R2": -0.12024201751840158,
+      "RMSE": 37.334798238691604,
+      "MAE": 14.952619047619047,
+      "R2_log": -0.11021053618379151
+    },
+    {
+      "model": "baseline_median",
+      "target": "turbidity",
+      "water_body_type": "overall",
+      "n": 868,
+      "R2": -0.09231949892187119,
+      "RMSE": 62.03062499267251,
+      "MAE": 21.413928571428574,
+      "R2_log": -0.13450476807544232
+    },
+    {
+      "model": "baseline_median",
+      "target": "turbidity",
+      "water_body_type": "reservoir",
+      "n": 78,
+      "R2": -0.13722550366673603,
+      "RMSE": 57.407970946595285,
+      "MAE": 24.96923076923077,
+      "R2_log": -0.10755004891423425
+    },
+    {
+      "model": "baseline_median",
+      "target": "turbidity",
+      "water_body_type": "river",
+      "n": 403,
+      "R2": -0.13840532532722372,
+      "RMSE": 60.290101185788004,
+      "MAE": 24.109553349875934,
+      "R2_log": -0.18581593702536625
+    },
+    {
+      "model": "baseline_median",
+      "target": "turbidity",
+      "water_body_type": "unknown",
+      "n": 219,
+      "R2": -0.04342998294677858,
+      "RMSE": 79.49010251706508,
+      "MAE": 20.143835616438356,
+      "R2_log": -0.11604351101615729
+    }
+  ]
+}

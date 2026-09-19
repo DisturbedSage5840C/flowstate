@@ -1,0 +1,28 @@
+{
+  "feature_cols": [
+    "B2",
+    "B3",
+    "B4",
+    "B5",
+    "B8",
+    "B11",
+    "ndci",
+    "bdm2",
+    "bdm3",
+    "red_green",
+    "nir",
+    "temp_surface"
+  ],
+  "targets": [
+    "chl_a",
+    "turbidity",
+    "do"
+  ],
+  "log_targets": [
+    "bod",
+    "chl_a",
+    "turbidity"
+  ],
+  "n_folds": 5,
+  "random_state": 42
+}

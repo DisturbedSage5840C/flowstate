@@ -1,0 +1,410 @@
+{
+  "model": "CNN-BiLSTM-masked-attention over per-station visit windows",
+  "validation": "5-fold site-blocked spatial CV, out-of-fold predictions",
+  "rows": 390,
+  "stations": 13,
+  "window": 3,
+  "max_gap_days": 90.0,
+  "share_of_samples_with_history": 0.9487179487179487,
+  "mean_window_length": 2.782051282051282,
+  "folds": [
+    {
+      "fold": 0,
+      "n_train": 300,
+      "n_early_stop": 60,
+      "n_heldout": 30,
+      "best_epoch": 12
+    },
+    {
+      "fold": 1,
+      "n_train": 240,
+      "n_early_stop": 30,
+      "n_heldout": 120,
+      "best_epoch": 23
+    },
+    {
+      "fold": 2,
+      "n_train": 270,
+      "n_early_stop": 60,
+      "n_heldout": 60,
+      "best_epoch": 33
+    },
+    {
+      "fold": 3,
+      "n_train": 270,
+      "n_early_stop": 60,
+      "n_heldout": 60,
+      "best_epoch": 16
+    },
+    {
+      "fold": 4,
+      "n_train": 240,
+      "n_early_stop": 30,
+      "n_heldout": 120,
+      "best_epoch": 57
+    }
+  ],
+  "artifact": "reports\\dl_artifact.pt",
+  "metrics": [
+    {
+      "model": "dl_oof",
+      "target": "chl_a",
+      "water_body_type": "lagoon",
+      "n": 30,
+      "R2": 0.7667105027763359,
+      "RMSE": 5.522011462290676,
+      "MAE": 4.3890291035861395,
+      "R2_log": 0.705122269380428
+    },
+    {
+      "model": "dl_oof",
+      "target": "chl_a",
+      "water_body_type": "lake",
+      "n": 150,
+      "R2": 0.04367017922900818,
+      "RMSE": 46.79166000704867,
+      "MAE": 32.656953737742064,
+      "R2_log": 0.4018395403428048
+    },
+    {
+      "model": "dl_oof",
+      "target": "chl_a",
+      "water_body_type": "overall",
+      "n": 390,
+      "R2": 0.5771173676018608,
+      "RMSE": 29.840501556178186,
+      "MAE": 16.539929687379722,
+      "R2_log": 0.7095670924019079
+    },
+    {
+      "model": "dl_oof",
+      "target": "chl_a",
+      "water_body_type": "river",
+      "n": 210,
+      "R2": -0.2600675516956792,
+      "RMSE": 9.24377851738816,
+      "MAE": 6.763612591948562,
+      "R2_log": -0.2973283367060453
+    },
+    {
+      "model": "dl_oof",
+      "target": "do",
+      "water_body_type": "lagoon",
+      "n": 30,
+      "R2": -0.79357524225438,
+      "RMSE": 1.4059826929321542,
+      "MAE": 1.1929598865405766,
+      "R2_log": NaN
+    },
+    {
+      "model": "dl_oof",
+      "target": "do",
+      "water_body_type": "lake",
+      "n": 150,
+      "R2": -1.2580002741907887,
+      "RMSE": 2.9382948337498216,
+      "MAE": 2.57032125717135,
+      "R2_log": NaN
+    },
+    {
+      "model": "dl_oof",
+      "target": "do",
+      "water_body_type": "overall",
+      "n": 390,
+      "R2": -0.3543314763572749,
+      "RMSE": 2.307860026678098,
+      "MAE": 1.9214399307585568,
+      "R2_log": NaN
+    },
+    {
+      "model": "dl_oof",
+      "target": "do",
+      "water_body_type": "river",
+      "n": 210,
+      "R2": 0.0718371705707922,
+      "RMSE": 1.8553460498390282,
+      "MAE": 1.5620218467805587,
+      "R2_log": NaN
+    },
+    {
+      "model": "dl_oof",
+      "target": "turbidity",
+      "water_body_type": "lagoon",
+      "n": 30,
+      "R2": 0.17479428292485355,
+      "RMSE": 20.157651372658638,
+      "MAE": 15.885365077834937,
+      "R2_log": 0.14516149265153044
+    },
+    {
+      "model": "dl_oof",
+      "target": "turbidity",
+      "water_body_type": "lake",
+      "n": 150,
+      "R2": -0.3575380925931777,
+      "RMSE": 32.289757792897994,
+      "MAE": 24.413052727214623,
+      "R2_log": -0.2826076472756709
+    },
+    {
+      "model": "dl_oof",
+      "target": "turbidity",
+      "water_body_type": "overall",
+      "n": 390,
+      "R2": 0.8704210588431496,
+      "RMSE": 53.08915160158774,
+      "MAE": 36.13023992556582,
+      "R2_log": 0.7749272538162109
+    },
+    {
+      "model": "dl_oof",
+      "target": "turbidity",
+      "water_body_type": "river",
+      "n": 210,
+      "R2": 0.769966469236312,
+      "RMSE": 66.56949218739234,
+      "MAE": 47.3917843312068,
+      "R2_log": 0.8428693412254593
+    },
+    {
+      "model": "baseline_mean",
+      "target": "chl_a",
+      "water_body_type": "lagoon",
+      "n": 30,
+      "R2": -4.84136268535216,
+      "RMSE": 27.631648539150717,
+      "MAE": 25.155532758163687,
+      "R2_log": -3.023378252275906
+    },
+    {
+      "model": "baseline_mean",
+      "target": "chl_a",
+      "water_body_type": "lake",
+      "n": 150,
+      "R2": -1.8876503822890385,
+      "RMSE": 81.30867966858226,
+      "MAE": 64.84369907317634,
+      "R2_log": -4.088510379817621
+    },
+    {
+      "model": "baseline_mean",
+      "target": "chl_a",
+      "water_body_type": "overall",
+      "n": 390,
+      "R2": -0.6375869744143954,
+      "RMSE": 58.721667748636264,
+      "MAE": 47.23972498383608,
+      "R2_log": -1.0993695985260827
+    },
+    {
+      "model": "baseline_mean",
+      "target": "chl_a",
+      "water_body_type": "river",
+      "n": 210,
+      "R2": -22.190299038491798,
+      "RMSE": 39.65571562681584,
+      "MAE": 37.82034238083193,
+      "R2_log": -7.263482190313512
+    },
+    {
+      "model": "baseline_mean",
+      "target": "do",
+      "water_body_type": "lagoon",
+      "n": 30,
+      "R2": -2.912145986981371,
+      "RMSE": 2.0764797531107346,
+      "MAE": 1.791540975959012,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_mean",
+      "target": "do",
+      "water_body_type": "lake",
+      "n": 150,
+      "R2": -0.11844668479690212,
+      "RMSE": 2.067954693517194,
+      "MAE": 1.765387517889157,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_mean",
+      "target": "do",
+      "water_body_type": "overall",
+      "n": 390,
+      "R2": -0.07707732777230758,
+      "RMSE": 2.058118711311045,
+      "MAE": 1.7142452500511431,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_mean",
+      "target": "do",
+      "water_body_type": "river",
+      "n": 210,
+      "R2": -0.13138852463270756,
+      "RMSE": 2.0484186566629705,
+      "MAE": 1.6666728121800094,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_mean",
+      "target": "turbidity",
+      "water_body_type": "lagoon",
+      "n": 30,
+      "R2": -23.33170375794206,
+      "RMSE": 109.45738687860351,
+      "MAE": 107.18451385498044,
+      "R2_log": -7.020565919942397
+    },
+    {
+      "model": "baseline_mean",
+      "target": "turbidity",
+      "water_body_type": "lake",
+      "n": 150,
+      "R2": -31.455489489313855,
+      "RMSE": 157.88208632664933,
+      "MAE": 155.88186646231895,
+      "R2_log": -6.640883821289283
+    },
+    {
+      "model": "baseline_mean",
+      "target": "turbidity",
+      "water_body_type": "overall",
+      "n": 390,
+      "R2": -0.33254782848506603,
+      "RMSE": 170.24719870119813,
+      "MAE": 143.43252112938725,
+      "R2_log": -0.505310011541384
+    },
+    {
+      "model": "baseline_mean",
+      "target": "turbidity",
+      "water_body_type": "river",
+      "n": 210,
+      "R2": -0.781054283999439,
+      "RMSE": 185.23295263620972,
+      "MAE": 139.7184183593513,
+      "R2_log": -0.6444363527642138
+    },
+    {
+      "model": "baseline_median",
+      "target": "chl_a",
+      "water_body_type": "lagoon",
+      "n": 30,
+      "R2": -0.0446626619964825,
+      "RMSE": 11.68524295495918,
+      "MAE": 10.431532605489094,
+      "R2_log": -0.1834328117875148
+    },
+    {
+      "model": "baseline_median",
+      "target": "chl_a",
+      "water_body_type": "lake",
+      "n": 150,
+      "R2": -2.141695230736202,
+      "RMSE": 84.80991538695072,
+      "MAE": 69.47896525065104,
+      "R2_log": -5.497336250039759
+    },
+    {
+      "model": "baseline_median",
+      "target": "chl_a",
+      "water_body_type": "overall",
+      "n": 390,
+      "R2": -0.43228067165285644,
+      "RMSE": 54.91743686821743,
+      "MAE": 37.26863633241409,
+      "R2_log": -0.6756962804869537
+    },
+    {
+      "model": "baseline_median",
+      "target": "chl_a",
+      "water_body_type": "river",
+      "n": 210,
+      "R2": -5.545152422274671,
+      "RMSE": 21.067475595080843,
+      "MAE": 18.095130494662694,
+      "R2_log": -3.160332635564724
+    },
+    {
+      "model": "baseline_median",
+      "target": "do",
+      "water_body_type": "lagoon",
+      "n": 30,
+      "R2": -3.619661120883621,
+      "RMSE": 2.256447502313449,
+      "MAE": 1.9973498026529948,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_median",
+      "target": "do",
+      "water_body_type": "lake",
+      "n": 150,
+      "R2": -0.11565873183199082,
+      "RMSE": 2.065375689165855,
+      "MAE": 1.7620566395918529,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_median",
+      "target": "do",
+      "water_body_type": "overall",
+      "n": 390,
+      "R2": -0.08360064268242251,
+      "RMSE": 2.0643417972475486,
+      "MAE": 1.7234382078815729,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_median",
+      "target": "do",
+      "water_body_type": "river",
+      "n": 210,
+      "R2": -0.11625127405592406,
+      "RMSE": 2.0346692503605333,
+      "MAE": 1.6567233859783128,
+      "R2_log": NaN
+    },
+    {
+      "model": "baseline_median",
+      "target": "turbidity",
+      "water_body_type": "lagoon",
+      "n": 30,
+      "R2": -4.16493943656549,
+      "RMSE": 50.430286150151616,
+      "MAE": 45.28591645558675,
+      "R2_log": -2.4683171764836174
+    },
+    {
+      "model": "baseline_median",
+      "target": "turbidity",
+      "water_body_type": "lake",
+      "n": 150,
+      "R2": -19.508792066010184,
+      "RMSE": 125.50436073311873,
+      "MAE": 122.15195763905844,
+      "R2_log": -5.06143112647607
+    },
+    {
+      "model": "baseline_median",
+      "target": "turbidity",
+      "water_body_type": "overall",
+      "n": 390,
+      "R2": -0.5749017154053393,
+      "RMSE": 185.08247554028077,
+      "MAE": 148.9365567525228,
+      "R2_log": -0.6434305092377532
+    },
+    {
+      "model": "baseline_median",
+      "target": "turbidity",
+      "water_body_type": "river",
+      "n": 210,
+      "R2": -1.6994176352257395,
+      "RMSE": 228.04193198407674,
+      "MAE": 182.8756475902739,
+      "R2_log": -3.111056960091414
+    }
+  ]
+}
