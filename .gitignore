@@ -54,6 +54,11 @@ htmlcov/
 # assistant / agent local state
 .claude/
 
+# internal planning docs (kept locally, not synced to the repo)
+AQUA_SENSE_PROJECT_PLAN.md
+FIX_PLAN.md
+FLOW_STATE_FIGMA_PROMPT.md
+
 # frontend tooling
 frontend/.vite/
 frontend/*.tsbuildinfo
