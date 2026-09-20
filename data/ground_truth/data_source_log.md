@@ -180,8 +180,8 @@ buffer radius is 500 m (as in the project plan). Only visits with a clear scene 
   nearest *other* station: ~4.7 km, vs ~358 km once `SpatialKFold`'s clustering removes nearby neighbours on
   purpose). A distance-weighted KNN baseline over other stations' known values, evaluated with a new
   `StationKFold` (a station held out entirely, but the rest of the network available -- the real "densify
-  existing coverage" scenario), combined with the existing satellite features: DO R² 0.019 → **0.401**, BOD
-  R²(log) 0.169 → **0.460**, turbidity R²(log) 0.042 → **0.438** (`reports/real/spatial_knn_summary.json`).
+  existing coverage" scenario), combined with the existing satellite features: DO R² 0.019 → **0.417**, BOD
+  R²(log) 0.169 → **0.475**, turbidity R²(log) 0.042 → **0.469** (`reports/real/spatial_knn_summary.json`).
   Conditional on proximity (BOD Spearman 0.70 at <5km → 0.42 at 50-200km) and reported as a genuinely
   different, separately-labelled question from the site-blocked numbers above, never merged with them. Also
   tested: weighting row-level training by `n_water_px` (reproduces the documented 0.194→0.368 correlation
@@ -190,13 +190,18 @@ buffer radius is 500 m (as in the project plan). Only visits with a clear scene 
   network route to either host from this sandbox): `src/data/soil.py` (ISRIC SoilGrids) and
   `src/data/land_cover.py` (ESA WorldCover land-use %) — present in `src/models/schema.py::SOIL_LAND_COVER_COLS`,
   wired into no feature set, exactly the rainfall precedent (fetch, then ablate, never assume).
+  **Update**: the land-cover fetch was later run (Planetary Computer was reachable; 2,121/2,121 stations, 100%
+  coverage) and ablated on identical rows/folds: no gain for the row-level or spatial-KNN models
+  (`reports/real/land_cover_ablation.json`), so it stays out of every feature set. The spatial-KNN inner model
+  also gained `nearest_station_km` and `knn_neighbor_std` features; a per-target (k, eps_km) sweep did not
+  transfer to the combo model, so the defaults k=5, eps_km=0.1 are kept.
 
 ## 5. Disclosure text for the pitch
 > "Labels are CPCB in-situ grab-sample measurements (DO, BOD, turbidity) from the National Water Data Portal, matched
 > to Sentinel-2 L2A reflectance within ±3 days. Chlorophyll-a has no ground truth and is shown only as an index. The
 > headline result is a binary pollution screen (e.g. BOD above the CPCB Class C limit), out-of-fold AUC ~0.75 — a
 > decision an inspector can act on. Near an already-monitored CPCB station, a spatial-KNN model raises real-number
-> regression skill substantially (BOD R²(log) up to ~0.46, DO R² up to ~0.40) — but that skill is conditional on
+> regression skill substantially (BOD R²(log) up to ~0.47, DO R² up to ~0.42) — but that skill is conditional on
 > proximity to an existing station and is reported separately from the 'works anywhere' numbers, never blended.
 > Exact DO/BOD/turbidity concentrations far from any monitored station cannot be recovered from reflectance alone
 > (DO and BOD are not optically active); we report that honestly rather than oversell a per-visit number."

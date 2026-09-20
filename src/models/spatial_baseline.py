@@ -16,10 +16,18 @@ with the existing satellite/context features (schema.py's FEATURE_SETS) as an ex
 further. Measured on train_real_large.parquet (see reports/real/spatial_knn_summary.json for the exact,
 regenerated numbers):
 
-    target      | KNN alone R^2 | KNN alone Spearman | KNN + XGBoost R^2 | R^2(log)
-    do          | 0.396         | 0.650               | 0.398              | 0.320
-    bod         | -0.022        | 0.650               | 0.115              | 0.480
-    turbidity   | 0.040         | 0.615               | 0.133              | 0.431
+    target      | KNN alone R^2 | KNN alone Spearman | KNN + XGBoost R^2 | KNN + XGBoost R^2(log)
+    do          | 0.385         | 0.648               | 0.417              | n/a (not log-scaled)
+    bod         | -0.037        | 0.652               | 0.087              | 0.475
+    turbidity   | 0.028         | 0.613               | 0.107              | 0.469
+
+The inner XGBoost receives ``knn_baseline`` plus two confidence features, ``nearest_station_km`` and
+``knn_neighbor_std``, so it can learn distance-adaptive trust in the neighbour estimate. With those
+features, k=5 / eps_km=0.1 (the defaults) beat every sweep-tuned (k, eps_km) pick on all three targets:
+scripts/sweep_spatial_knn.py scores only the KNN-alone proxy, and its tighter-k picks did not transfer to
+the combo model (see that script's docstring). ESA WorldCover land-cover fractions were also ablated as
+extra inner-model features (reports/real/land_cover_ablation.json) and rejected: |change| well under the
++0.02 bar for every target.
 
 Skill degrades with distance to the nearest known station (BOD Spearman 0.70 at <5km -> 0.42 at
 50-200km) -- real spatial autocorrelation (CPCB densely monitors many river reaches/urban lake systems

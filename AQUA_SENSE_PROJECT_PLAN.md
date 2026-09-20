@@ -311,9 +311,9 @@ existing coverage" deployment scenario, not "cover an unmonitored region"):
 
 | target | row-level (SpatialKFold) | KNN-alone (station-held-out) | KNN + XGBoost combo |
 |---|---|---|---|
-| do | R² 0.019 | R² 0.385, Spearman 0.648 | R² 0.401, Spearman 0.644 |
-| bod | R² 0.008, R²(log) 0.169 | R² −0.037, Spearman 0.652 | R² 0.084, **R²(log) 0.460**, Spearman 0.669 |
-| turbidity | R² −0.030, R²(log) 0.042 | R² 0.028, Spearman 0.613 | R² 0.109, R²(log) 0.438, Spearman 0.648 |
+| do | R² 0.021 | R² 0.385, Spearman 0.648 | R² 0.417, Spearman 0.657 |
+| bod | R² 0.011, R²(log) 0.171 | R² −0.037, Spearman 0.652 | R² 0.087, **R²(log) 0.475**, Spearman 0.687 |
+| turbidity | R² −0.029, R²(log) 0.040 | R² 0.028, Spearman 0.613 | R² 0.107, R²(log) 0.469, Spearman 0.665 |
 
 (exact, regenerated numbers: `reports/real/spatial_knn_summary.json`, `reports/real/metrics_table_spatial_knn.csv`)
 
@@ -341,10 +341,20 @@ correlation pattern is real; it did not translate into a win once mixed with eve
 multi-feature fit. Reported honestly rather than adopted as a default (`n_water_px_weighting_ablation` in
 `reports/real/metrics_summary.json`).
 
-**Soil composition and land-use scaffolding, explicitly not validated**: `src/data/soil.py` (ISRIC
-SoilGrids) and `src/data/land_cover.py` (ESA WorldCover) fetch code exists, is unit-tested against mocked
-responses, and follows the exact fetch-then-ablate discipline every other feature in this project went
-through -- but this sandbox has no network route to either host (confirmed directly), so neither has been
-run, and `SOIL_LAND_COVER_COLS` is in no `FEATURE_SETS` entry. `scripts/backfill_soil_land_cover.py` is
-ready for someone with real network access to run and then ablate; do not add these columns to a feature
-set without that ablation, on the same principle rainfall was tested and dropped.
+**Model improvements this round**: the inner XGBoost of the spatial-KNN model now also receives
+`nearest_station_km` and `knn_neighbor_std` (spread of the k neighbour values) as features, which lifted
+all three combo numbers above (DO R² 0.401 → 0.417, BOD R²(log) 0.460 → 0.475, turbidity R²(log) 0.438 →
+0.469). A per-target (k, eps_km) sweep (`scripts/sweep_spatial_knn.py`, `reports/real/spatial_knn_sweep.json`)
+picked tighter neighbourhoods that scored better on the KNN-alone proxy but made the deployed combo *worse*,
+because the inner model already learns distance-adaptive trust; the defaults k=5, eps_km=0.1 are kept and
+`train_spatial_baseline.py --use-sweep` is opt-in. Sample-weighting by `n_water_px` was re-tested on this
+model too: unweighted wins on all three targets, as it did for the row-level regressors.
+
+**Land cover: fetched, ablated, rejected.** `src/data/land_cover.py` (ESA WorldCover via Planetary Computer)
+was run for all 2,121 stations (100% coverage, `data/interim/land_cover.parquet`) and joined onto both
+training tables (`landcover_cropland_pct`, `landcover_built_pct`, `landcover_tree_pct`). Ablation on identical
+rows and folds (`reports/real/land_cover_ablation.json`): the row-level regressors do not improve (BOD
+R²(log) 0.175 → 0.155, turbidity R²(log) 0.039 → 0.007) and the spatial-KNN model moves by under 0.005 on
+every target. `LAND_COVER_COLS` therefore stays out of every `FEATURE_SETS` entry, the same outcome as
+rainfall. Soil (`src/data/soil.py`, ISRIC SoilGrids) remains unrun: ISRIC returns null over water-body
+pixels, where every CPCB station sits, so a backfill is low value.

@@ -18,8 +18,8 @@ station's water likely polluted, for an inspector to prioritise" — out-of-fold
 
 **Real-number regression, close to an existing station.** A second result, added later and reported separately: a
 distance-weighted spatial-KNN model (`src/models/spatial_baseline.py`) combining nearby *other* CPCB stations' known
-values with the satellite/context features raises out-of-fold regression skill substantially — DO R² 0.02 → **0.40**,
-BOD R²(log) 0.17 → **0.46**, turbidity R²(log) 0.04 → **0.44** — but **only near an already-monitored station**
+values with the satellite/context features raises out-of-fold regression skill substantially — DO R² 0.02 → **0.42**,
+BOD R²(log) 0.17 → **0.47**, turbidity R²(log) 0.04 → **0.47** — but **only near an already-monitored station**
 (skill fades from Spearman 0.70 at <5 km to 0.42 at 50-200 km). This is a genuinely different, easier question than
 "work anywhere in India" and is never blended with the numbers above. See `AQUA_SENSE_PROJECT_PLAN.md` §12 and
 `reports/real/spatial_knn_summary.json`.
