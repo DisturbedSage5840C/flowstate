@@ -6,6 +6,8 @@ Everything the UI shows comes from artifacts the pipeline already produced:
     Sentinel-2 scenes, one row per (station, visit)
   * ``reports/real/screening_oof.parquet``: out-of-fold P(BOD > 3 mg/L) per visit (the PRIMARY model); a station's
     breach probability is the mean over its visits. Falls back to ``screening_shortlist.csv`` (older layout).
+  * ``reports/real/spatial_knn_oof.parquet`` (optional): held-out spatial-KNN estimates per visit, exported by
+    ``scripts/export_spatial_knn_oof.py``; ``reports/real/spatial_knn_summary.json`` holds its validation scores
   * ``reports/real/screening_metrics.json`` / ``dataset_summary*.json``: validation numbers and dataset facts
 
 Nothing here invents data. Where the UI mock-up had content the backend has no source for (sewage outlets, STPs,
@@ -120,6 +122,12 @@ class Store:
         self.screening = read_json("screening_metrics.json")
         self.dataset = read_json("dataset_summary_large.json") or read_json("dataset_summary.json")
         self._prob = self._load_probabilities(real)
+
+        oof = real / "spatial_knn_oof.parquet"
+        self.knn_oof = pd.read_parquet(oof) if oof.exists() else None
+        if self.knn_oof is not None:
+            self.knn_oof["date"] = pd.to_datetime(self.knn_oof["date"])
+        self.knn_summary = read_json("spatial_knn_summary.json")
 
         self.stations = self._build_stations()
         self._by_id = self.stations.set_index("id", drop=False)
@@ -311,6 +319,7 @@ class Store:
             })
         factors, signals = self._factors_and_signals(r)
         yearly = []
+        estimates = self._estimates(sid)
         for y, gy in g.groupby("year"):
             yearly.append({"year": int(y), "visits": len(gy), "risk": self._wqi_band(gy["wqi"].mean()),
                            "wqi": _nan_to_none(gy["wqi"].mean()), "bod": _nan_to_none(gy["bod"].mean()),
@@ -335,10 +344,47 @@ class Store:
             "visits": int(r["visits"]), "first_date": r["first_date"].strftime("%d %b %Y"), "last_date": r["last_date"].strftime("%d %b %Y"),
             "readings": readings, "around": around, "rationale": rationale, "signals": signals, "factors": factors,
             "wqi": _nan_to_none(r["wqi"]), "tier": r["tier"], "cpcb_class": r["cpcb_class"],
-            "yearly": yearly, "recommendations": self._recommendations(r),
+            "yearly": yearly, "estimates": estimates, "recommendations": self._recommendations(r),
             "scene": {"id": last["scene_id"], "date": pd.Timestamp(last["scene_date"]).strftime("%d %b %Y") if pd.notna(last["scene_date"]) else None,
                       "cloud": _nan_to_none(last["scene_cloud"])},
         }
+
+    def _estimates(self, sid: str) -> dict | None:
+        """Held-out neighbour+satellite estimate next to the measured value, latest visit with an estimate.
+
+        Every estimate is out-of-fold: this station's own record is excluded from the neighbours and from
+        the model's training rows. ``skill`` carries the model's overall validation score per indicator."""
+        if self.knn_oof is None:
+            return None
+        site = self._by_id.loc[sid]["site"]
+        rows = self.knn_oof[self.knn_oof["site"] == site]
+        if rows.empty:
+            return None
+        g = self.table[self.table["sid"] == sid].set_index("date")
+        out = []
+        for col, label, unit in INDICATORS:
+            est_col = f"{col}_est"
+            if est_col not in rows.columns:
+                continue
+            have = rows[rows[est_col].notna()].sort_values("date")
+            if have.empty:
+                continue
+            r = have.iloc[-1]
+            measured = g[col].get(r["date"]) if r["date"] in g.index else None
+            if isinstance(measured, pd.Series):
+                measured = measured.iloc[0]
+            tgt = (self.knn_summary.get("targets") or {}).get(col) or {}
+            combo = tgt.get("knn_plus_xgboost") or {}
+            skill = combo.get("R2_log") if combo.get("R2_log") == combo.get("R2_log") and combo.get("R2_log") is not None else combo.get("R2")
+            out.append({
+                "name": label, "unit": unit, "date": pd.Timestamp(r["date"]).strftime("%d %b %Y"),
+                "estimate": round(float(r[est_col]), 2), "measured": _nan_to_none(measured),
+                "nearest_km": _nan_to_none(r.get(f"{col}_nearest_km")),
+                "skill": None if skill is None else round(float(skill), 3),
+                "skill_metric": "R2_log" if col in ("bod", "turbidity") else "R2",
+                "spearman": _nan_to_none(combo.get("spearman")),
+            })
+        return {"items": out} if out else None
 
     def compare(self, a: str, b: str) -> dict:
         ra, rb = self._row(a), self._row(b)

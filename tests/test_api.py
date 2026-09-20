@@ -40,6 +40,15 @@ def test_station_detail_roundtrip_and_404(client):
     assert client.get("/api/stations/nope").status_code == 404
 
 
+def test_station_estimates_are_optional_and_well_formed(client):
+    top = client.get("/api/priorities", params={"n": 1}).json()[0]
+    d = client.get(f"/api/stations/{top['id']}").json()
+    assert "estimates" in d
+    if d["estimates"]:
+        for e in d["estimates"]["items"]:
+            assert e["estimate"] is not None and e["name"] in ("Turbidity", "BOD", "Dissolved oxygen")
+
+
 def test_priorities_sorted_by_probability(client):
     ids = [p["id"] for p in client.get("/api/priorities", params={"n": 5}).json()]
     probs = [client.get(f"/api/stations/{i}").json()["prob"] for i in ids]

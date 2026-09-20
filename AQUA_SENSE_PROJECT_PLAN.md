@@ -358,3 +358,45 @@ R²(log) 0.175 → 0.155, turbidity R²(log) 0.039 → 0.007) and the spatial-KN
 every target. `LAND_COVER_COLS` therefore stays out of every `FEATURE_SETS` entry, the same outcome as
 rainfall. Soil (`src/data/soil.py`, ISRIC SoilGrids) remains unrun: ISRIC returns null over water-body
 pixels, where every CPCB station sits, so a backfill is low value.
+
+## 13. Flow State UI and API (2026-09-20): how the models reach a user
+
+The React UI in `frontend/` (from the Figma design) talks to a FastAPI layer in `src/api/`; nothing on screen is
+mock data. Everything is derived from artifacts the pipeline already writes:
+
+| UI element | Source |
+|---|---|
+| Map colours, priority list, plan/restore stats | screening model's per-station breach probability (`reports/real/screening_oof.parquet`, mean over visits; high >= 50 %, moderate >= 25 %) |
+| Single-parameter layers (BOD, DO, turbidity, change) | latest measured value per station (`train_real_large.parquet`) |
+| Time slider (2019-2021) | measured WQI band for that calendar year (not the screening model) |
+| Station panel: readings, trend, planning factors, recommendations | measured visits + rule-based text, no invented sources |
+| **Neighbour estimate vs measured** | spatial-KNN model's held-out predictions (`reports/real/spatial_knn_oof.parquet`, written by `scripts/export_spatial_knn_oof.py`) with the model's overall validation score and distance to the nearest other station |
+| Ask Flow State | deterministic keyword-to-filter parser (no LLM); says so when a concept (e.g. sewage outlets) has no data |
+| Alerts | latest visit crossed the BOD limit or worsened sharply versus the visit before |
+| Sentinel-2 view | EOX cloudless 2020 mosaic and Esri imagery as basemaps, plus the nearest matched scene date/cloud from the training table |
+
+The exported held-out estimates reproduce the headline scores to within about 0.01 (DO R² 0.418, BOD R²(log) 0.467, turbidity R²(log) 0.467;
+Optuna is not bit-for-bit repeatable); the UI quotes the scores in `spatial_knn_summary.json`.
+
+Layers the design showed but the data cannot support (sewage outlets, STPs, drainage, land use, population,
+forecasts, NDWI/NDCI) are visibly disabled as "soon", never faked. Dark mode is a per-viewer toggle that defaults to
+the OS setting. Tests: `tests/test_api.py`. CI: `.github/workflows/ci.yml` (Python tests + frontend build).
+
+## 14. Submission status: what is finished and what is still open
+
+**Finished and verified:** real CPCB + Sentinel-2 dataset (8,461 visits, 2,121 stations, cross-checked between Planetary
+Computer and Earth Engine); site-blocked spatial validation; screening model (BOD > 3 mg/L AUC 0.756, precision 76 % in
+the top 10 % against a 29 % base rate); spatial-KNN regression near monitored stations (DO R² 0.417, BOD R²(log) 0.475,
+turbidity R²(log) 0.469); honest negative results (rainfall, land cover, sample weighting, sweep transfer); WQI and
+CPCB class; Streamlit dashboard; the Flow State UI + API above.
+
+**Not done, and disclosed rather than hidden:**
+- ACOLITE and C2RCC atmospheric correction were never run on a real scene (SNAP/ACOLITE not installed); every result
+  uses Sen2Cor L2A reflectance. Do not claim the dual-tier correction.
+- The Nechad/Dogliotti turbidity constants were never verified against the paper tables; the pipeline instead uses an
+  empirical per-water-body power-law refit against measured CPCB turbidity (median ratio ~1.0).
+- Chlorophyll-a and water temperature have no ground truth; Chl-a is an unvalidated index only.
+- Concentration regression for DO, BOD and turbidity is near zero far from any monitored station.
+- Soil composition (ISRIC) was not run; land cover was run and rejected.
+- The UI's infrastructure/planning layers have no data source.
+- The CI workflow was written but has not yet run on GitHub.

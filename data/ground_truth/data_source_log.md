@@ -205,3 +205,10 @@ buffer radius is 500 m (as in the project plan). Only visits with a clear scene 
 > proximity to an existing station and is reported separately from the 'works anywhere' numbers, never blended.
 > Exact DO/BOD/turbidity concentrations far from any monitored station cannot be recovered from reflectance alone
 > (DO and BOD are not optically active); we report that honestly rather than oversell a per-visit number."
+
+## 6. UI-facing exports (2026-09-20)
+
+`reports/real/spatial_knn_oof.parquet` (written by `scripts/export_spatial_knn_oof.py`): the spatial-KNN model's
+out-of-fold estimate per (station, visit) and per target, plus the distance to the nearest other station used. Each
+estimate excludes the station's own record from both the neighbour pool and the inner model's training rows. It is
+served by the API next to the measured value and is described in the UI as a held-out estimate, not a measurement.

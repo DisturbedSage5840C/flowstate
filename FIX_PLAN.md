@@ -10,6 +10,20 @@ each target's variance is between-station, invisible to a single satellite visit
 kept as a secondary, explicitly flagged result. This file's checklist below is left as the historical
 record of what was reviewed and fixed up to that point; it is not being rewritten.
 
+# Submission status (updated 2026-09-20)
+
+Read this first. The checklist and tables below are the historical record; this is where things stand.
+
+| Item | Final status |
+|---|---|
+| Flow State UI wired to the backend | **Done.** `frontend/` + `src/api/`; see `AQUA_SENSE_PROJECT_PLAN.md` section 13. Dark mode included. |
+| Spatial-KNN model in the UI | **Done.** Held-out estimate next to the measured value, with distance to the nearest station and overall skill (`reports/real/spatial_knn_oof.parquet`). |
+| Model improvements | **Done.** Distance/spread features in the inner model, sweep and land-cover ablations recorded, defaults kept where the evidence said so. |
+| 5.5 CI | **Written** (`.github/workflows/ci.yml`: Python tests + frontend build); not yet observed running on GitHub. |
+| 2.5 Nechad coefficients | **Closed as won't-verify.** The constants are unverified and not relied on: the pipeline uses an empirical refit against measured CPCB turbidity. Do not cite the literature formula as validated. |
+| 4.6 / 4.7 ACOLITE + C2RCC on a real scene | **Open; needs software this project never had (SNAP, ACOLITE).** All results use Sen2Cor L2A. The pitch must not claim dual-tier correction. |
+| Section 6 pre-hackathon checklist in the project plan | Historical; superseded by the real-data pipeline. |
+
 # Status (updated 2026-09-19)
 
 Ticked boxes below have evidence (code + tests, or a run recorded in `reports/`). Items left open, and why:
@@ -158,7 +172,7 @@ These change how several items are fixed. A recommended default is given so noth
   - No tests for: feature formulas vs hand-computed values, the join (tolerance, `LS`, radius, <3-pair drop), masking logic, `predict_raster` round trip, `raster_layers`, the dashboard.
   Fix: tighten the two tests; add the missing ones; add `tests/test_no_label_leakage.py` (targets are not exact functions of features and are not in `FEATURE_COLS`).
 - [x] **5.4 Dashboard smoke test.** Add an `AppTest`-based test that runs the app and asserts zero exceptions and that model output changes with the radio.
-- [ ] **5.5 CI.** GitHub Actions: fresh venv, `pip install -r requirements.txt`, `pytest`, dashboard smoke test.
+- [x] **5.5 CI (written 2026-09-20, not yet observed on GitHub).** GitHub Actions: fresh venv, `pip install -r requirements.txt`, `pytest`, dashboard smoke test.
 
 ## Phase 6 — Correct the project plan document
 

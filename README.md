@@ -154,7 +154,14 @@ uvicorn src.api.server:app --port 8000                 # UI + API at http://loca
 ```
 
 Endpoints: `/api/overview /stations /stations/{id} /compare /search /cities /priorities /recommendations /alerts /scene`
-and `POST /api/ask` (a deterministic keyword-to-filter parser, not an LLM).
+and `POST /api/ask` (a deterministic keyword-to-filter parser, not an LLM). A station's panel also shows the spatial-KNN
+model's **held-out** estimate next to the measured value (`python -m scripts.export_spatial_knn_oof` writes
+`reports/real/spatial_knn_oof.parquet`), with the distance to the nearest other station and the model's overall skill.
+Light and dark themes; CI in `.github/workflows/ci.yml`.
+
+**Status and open items** are listed in `AQUA_SENSE_PROJECT_PLAN.md` section 14 and at the top of `FIX_PLAN.md`. In short:
+ACOLITE/C2RCC atmospheric correction was never run on a real scene, chlorophyll-a and temperature have no ground truth,
+and concentration regression is only meaningful near an already-monitored station.
 Map risk = the screening model's breach probability (high >= 50 %, moderate >= 25 %); the time slider switches to measured
 per-year WQI bands. The design's sewage-outlet / STP / drainage / land-use / forecast layers have no data source in this
 repo, so they are shown as "soon" rather than faked.

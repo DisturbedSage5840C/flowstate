@@ -22,6 +22,17 @@ export type Station = {
 
 export type Reading = { name: string; unit: string; value: number | null; trend: Trend; band: Band; n: number }
 export type Rec = { n: string; title: string; evidence: string; action: string }
+export type Estimate = {
+  name: string
+  unit: string
+  date: string
+  estimate: number
+  measured: number | null
+  nearest_km: number | null
+  skill: number | null
+  skill_metric: 'R2' | 'R2_log'
+  spearman: number | null
+}
 export type StationDetail = {
   id: string
   name: string
@@ -44,6 +55,7 @@ export type StationDetail = {
   wqi: number | null
   tier: string | null
   cpcb_class: string | null
+  estimates: { items: Estimate[] } | null
   yearly: { year: number; visits: number; risk: Band; wqi: number | null; bod: number | null; do: number | null; turbidity: number | null }[]
   recommendations: Rec[]
   scene: { id: string | null; date: string | null; cloud: number | null }

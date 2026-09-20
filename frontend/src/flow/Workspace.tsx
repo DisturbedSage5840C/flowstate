@@ -4,6 +4,7 @@ import {
   api,
   useApi,
   type Alert,
+  type Estimate,
   type AskResult,
   type Overview,
   type Priority,
@@ -498,6 +499,8 @@ function StationPanel({
           {d.tier && ` WQI ${d.wqi?.toFixed(0)} (${d.tier}${d.cpcb_class ? `, CPCB class ${d.cpcb_class}` : ''}).`}
         </p>
 
+        {d.estimates && <EstimateBlock items={d.estimates.items} />}
+
         {/* what's around it */}
         {d.around.length > 0 && (
           <div>
@@ -543,6 +546,34 @@ function StationPanel({
           {inList ? 'ON FIELD LIST — CLICK TO REMOVE' : 'PRIORITIZE FOR FIELD INVESTIGATION'}
         </button>
       </div>
+    </div>
+  )
+}
+
+/* ─────────────────────────── Held-out estimate vs measured ─────────────────────────── */
+function EstimateBlock({ items }: { items: Estimate[] }) {
+  return (
+    <div>
+      <p className="eyebrow mb-1 text-[var(--color-mute-2)]">Neighbour estimate vs measured</p>
+      <div className="rounded-[5px] border border-[var(--color-hair)]">
+        <div className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-[var(--color-hair)] px-3 py-2">
+          {['Indicator', 'Estimated', 'Measured'].map((c) => <span key={c} className="eyebrow text-[var(--color-mute-2)]">{c}</span>)}
+        </div>
+        {items.map((e) => (
+          <div key={e.name} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 px-3 py-2 text-[13px] [&:not(:last-child)]:border-b [&:not(:last-child)]:border-[var(--color-hair)]">
+            <span className="text-[var(--color-ink)]">{e.name}</span>
+            <span className="tnum text-[var(--color-accent)]">{e.estimate} {e.unit}</span>
+            <span className="tnum text-[var(--color-mute)]">{e.measured == null ? '—' : `${Number(e.measured.toFixed(2))} ${e.unit}`}</span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-1.5 text-[10.5px] leading-snug text-[var(--color-mute-2)]">
+        Held-out: what the model predicts for this station if it were not monitored, from the nearest other CPCB stations
+        (average {Math.round(items.reduce((s, e) => s + (e.nearest_km ?? 0), 0) / Math.max(1, items.filter((e) => e.nearest_km != null).length))} km away) plus Sentinel-2 features.
+        Overall skill across all stations:{' '}
+        {items.filter((e) => e.skill != null).map((e) => `${e.name} ${e.skill_metric === 'R2_log' ? 'R²(log)' : 'R²'} ${e.skill}`).join(' · ')}.
+        Skill fades with distance to the nearest station; it is not a lab reading.
+      </p>
     </div>
   )
 }
