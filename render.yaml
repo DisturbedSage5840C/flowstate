@@ -10,3 +10,12 @@ services:
         value: 3.12.0
       - key: ALLOWED_ORIGINS
         value: https://flowstate-seven-olive.vercel.app
+      # pyarrow defaults to jemalloc, which pre-allocates large memory arenas regardless of
+      # how little data is actually loaded (this API's own parquet files total ~1.6MB) -- that
+      # arena overhead alone can approach the free-tier 512MB ceiling. Forcing the system
+      # allocator avoids the pre-allocation. MALLOC_ARENA_MAX caps glibc's own per-thread arena
+      # multiplication, which has the same inflate-RSS-for-no-reason effect on small containers.
+      - key: ARROW_DEFAULT_MEMORY_POOL
+        value: system
+      - key: MALLOC_ARENA_MAX
+        value: "2"
