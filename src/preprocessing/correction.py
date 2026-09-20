@@ -1,10 +1,19 @@
 """Dual-tier atmospheric correction wrappers (ACOLITE DSF, C2RCC via SNAP GPT) with Hour-4 fallback.
 
 Both tools need Sentinel-2 L1C SAFE products (from Copernicus Data Space, not Earth Engine).
-Configure via env vars: ACOLITE_HOME (folder containing launch_acolite.py), SNAP_GPT (path to gpt).
+Configure via env vars: ACOLITE_HOME (folder containing launch_acolite.py), SNAP_GPT (path to gpt), and optionally
+ACOLITE_PYTHON (command to run ACOLITE with, e.g. ``micromamba run -r ROOT -n acolite python`` so the conda
+activation variables are set; it needs GDAL's ``osgeo`` bindings, which pip cannot install on
+Windows, so a conda-forge/micromamba environment is the practical route; defaults to the current interpreter).
+
+ACOLITE dry run (2026-09-20, ``reports/real/acolite_dry_run.json``): one real Sentinel-2 L1C scene (Hyderabad lakes,
+2020-11-04) was corrected end to end. Two practical limits found: a ~28 x 32 km subset died silently (memory), a
+~10 x 20 km ``limit`` completes in about a minute, so process large sites in tiles; and ``ancillary_data=False`` is
+needed without NASA Earthdata credentials.
 """
 import logging
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -44,9 +53,14 @@ def run_acolite(safe_path: Path | str, site: Site, out_dir: Path | str = INTERIM
         f"limit={s},{w},{n},{e}",  # S,W,N,E
         "atmospheric_correction_method=dark_spectrum",
         "l2w_parameters=Rrs_*", "rgb_rhot=False", "rgb_rhos=False", "l2r_export_geotiff=True",
+        "l2w_export_geotiff=True",          # Rrs GeoTIFFs (what correction_convert reads)
         "dsf_residual_glint_correction=True",
-    ]))
-    _run([sys.executable, str(Path(home) / "launch_acolite.py"), "--cli", "--settings", str(settings)], timeout)
+        "l2w_mask=False",                   # the pipeline applies its own MNDWI/NIR water mask; ACOLITE's default
+                                            # non-water test (SWIR > 0.0215) removed 6 of 8 small turbid Hyderabad tanks
+        "ancillary_data=False",             # no NASA Earthdata login needed; uses default pressure/wind/ozone
+    ]) + "\n")
+    python = shlex.split(os.environ.get("ACOLITE_PYTHON", sys.executable), posix=os.name != "nt")
+    _run([*python, str(Path(home) / "launch_acolite.py"), "--cli", "--settings", str(settings)], timeout)
     if not list(out_dir.glob("*.tif")) and not list(out_dir.glob("*.nc")):
         raise CorrectionError("ACOLITE produced no output")
     return out_dir

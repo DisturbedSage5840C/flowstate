@@ -240,7 +240,7 @@ If a model is not clearly better by Hour 12, ship XGBoost as production and pres
 | CNN-BiLSTM-attention over visit windows | done; only helps where history exists | `reports/real/dl_summary.json` |
 | WQI + CPCB class | done | section 9 |
 | Dashboard on real data + any-AOI map | done | `src/app/real_view.py`, `src/data/aoi.py` |
-| Dual-tier atmospheric correction (ACOLITE + C2RCC) | **not run**; wrappers + converter written, untested | `src/preprocessing/correction*.py` |
+| Dual-tier atmospheric correction (ACOLITE + C2RCC) | **ACOLITE run on one real scene** (section 15), agrees in ranking but not level with Sen2Cor; **C2RCC not run**; models still use Sen2Cor | `src/preprocessing/correction*.py` |
 | Earth Engine | enabled and verified live; extraction agrees with Planetary Computer (r 0.97-0.98); 8,461-row table built and now the default training table | `src/data/gee_extract.py`, `reports/real/backend_comparison.json` |
 | Kaggle datasets | Ganga/Sangam used only to validate Landsat temperature (its pH/conductivity are unreliable) | `src/data/kaggle_sources.py` |
 | Turbidity formula recalibration | literature Nechad/Dogliotti had an 11.7x median overestimate vs measured CPCB turbidity; refit per-water-body-type power law (`turbidity_calibrated`) brings the median ratio to ~1.0 and raises pooled Spearman 0.23 -> 0.33 | `src/features/feature_engineering.py`, `reports/real/empirical_formula_validation.json` |
@@ -391,11 +391,54 @@ turbidity R²(log) 0.469); honest negative results (rainfall, land cover, sample
 CPCB class; Streamlit dashboard; the Flow State UI + API above.
 
 **Not done, and disclosed rather than hidden:**
-- ACOLITE and C2RCC atmospheric correction were never run on a real scene (SNAP/ACOLITE not installed); every result
-  uses Sen2Cor L2A reflectance. Do not claim the dual-tier correction.
+- ACOLITE atmospheric correction was run on ONE real scene (section 15) and compared with Sen2Cor, but no model was
+  retrained on it; C2RCC (needs ESA SNAP) was never run. Every reported result uses Sen2Cor L2A reflectance. Do not claim
+  the dual-tier correction or that ACOLITE improved accuracy.
 - The Nechad/Dogliotti turbidity constants were never verified against the paper tables; the pipeline instead uses an
   empirical per-water-body power-law refit against measured CPCB turbidity (median ratio ~1.0).
 - Chlorophyll-a and water temperature have no ground truth; Chl-a is an unvalidated index only.
 - Concentration regression for DO, BOD and turbidity is near zero far from any monitored station.
 - Soil composition (ISRIC) was not run; land cover was run and rejected.
 - The UI's infrastructure/planning layers have no data source.
+
+## 15. ACOLITE dry run (2026-09-20): what was actually done
+
+One real Sentinel-2 L1C scene was atmospherically corrected end to end with ACOLITE's Dark Spectrum Fitting, converted
+with `correction_convert.acolite_to_contract`, and compared with the Sen2Cor L2A reflectance already in the training
+table. Scene: S2A 2020-11-04, tile T43QHV (Hyderabad lakes), downloaded from Google's public Sentinel-2 bucket; 8 CPCB
+stations were matched to it in the table, 7 could be compared (`reports/real/acolite_dry_run.json`,
+`scripts/acolite_dry_run.py`).
+
+| Band | median ACOLITE / Sen2Cor | Pearson r (n = 7) |
+|---|---|---|
+| B2 blue | 0.60 | 0.59 |
+| B3 green | 0.74 | 0.85 |
+| B4 red | 0.58 | 0.56 |
+| B5 red edge | 0.69 | 0.91 |
+| B6 | 1.46 | 0.80 |
+| B8 NIR | 1.78 | 0.78 |
+| B11 SWIR | 0.17 | 0.41 |
+
+**What this shows:** the ACOLITE path works and the converter handles real ACOLITE output. The two corrections agree in
+ranking (r 0.56-0.91) but differ a lot in level: ACOLITE gives lower visible reflectance and higher NIR than Sen2Cor over
+these small turbid tanks. Every model in this project was trained on Sen2Cor reflectance, so ACOLITE inputs cannot be fed
+to those models without retraining.
+
+**What this does not show:** which correction is more accurate (there is no in-water reflectance truth here), or that
+ACOLITE improves model skill. That needs many scenes, ACOLITE features for the whole table and a re-run of the spatial
+validation. It was not done; every reported result still uses Sen2Cor.
+
+**Findings that changed the code (`src/preprocessing/correction.py`, `tests/test_acolite_wrapper.py`):**
+- ACOLITE needs GDAL's Python bindings; on Windows the practical route is micromamba/conda. `ACOLITE_PYTHON` now takes a
+  full command such as `micromamba run -r ROOT -n acolite python` so the conda activation variables are set.
+- The wrapper never exported the Rrs GeoTIFFs the converter reads; it now sets `l2w_export_geotiff=True`.
+- ACOLITE's default non-water test (SWIR > 0.0215) masked 6 of the 8 small turbid tanks; the wrapper sets
+  `l2w_mask=False` because the pipeline applies its own MNDWI/NIR water mask (this also drops ACOLITE's cirrus and
+  high-TOA masks).
+- `ancillary_data=False` is needed without NASA Earthdata credentials.
+- A ~28 x 32 km subset died silently (memory); a ~10 x 20 km subset runs in about a minute, so large sites must be
+  processed in tiles.
+- The settings file must end with a newline (a missing one glued two settings together and silently broke the run).
+
+**C2RCC is still not run** (needs ESA SNAP). The "dual-tier" claim is therefore still unsupported; ACOLITE alone has a
+one-scene proof of function.

@@ -1,0 +1,185 @@
+{
+  "scene": "S2A_MSIL1C_20201104T051011_N0209_R019_T43QHV_20201104T071741.SAFE",
+  "bbox": [
+    78.15,
+    17.5,
+    78.35,
+    17.6
+  ],
+  "correction_method": "acolite_dsf",
+  "acolite_version": "GitHub clone 2026-09-20",
+  "stations_in_scene": 8,
+  "stations_compared": 7,
+  "bands": {
+    "B2": {
+      "median_ratio_acolite_over_sen2cor": 0.5975475529459052,
+      "pearson_r": 0.5948724967763727,
+      "spearman_rho": 0.6071428571428572,
+      "acolite_median": 0.015353556256741285,
+      "sen2cor_median": 0.025699999999999997
+    },
+    "B3": {
+      "median_ratio_acolite_over_sen2cor": 0.7446491479468844,
+      "pearson_r": 0.8468948781918058,
+      "spearman_rho": 0.7857142857142859,
+      "acolite_median": 0.029008718207478523,
+      "sen2cor_median": 0.04030852473718303
+    },
+    "B4": {
+      "median_ratio_acolite_over_sen2cor": 0.5783541636033491,
+      "pearson_r": 0.5592661933808288,
+      "spearman_rho": 0.5714285714285715,
+      "acolite_median": 0.015012871939688921,
+      "sen2cor_median": 0.02614163642960812
+    },
+    "B5": {
+      "median_ratio_acolite_over_sen2cor": 0.6913077757038355,
+      "pearson_r": 0.9102955784814415,
+      "spearman_rho": 0.6785714285714287,
+      "acolite_median": 0.026026306673884392,
+      "sen2cor_median": 0.0383
+    },
+    "B6": {
+      "median_ratio_acolite_over_sen2cor": 1.4607473936477238,
+      "pearson_r": 0.797691212476487,
+      "spearman_rho": 0.642857142857143,
+      "acolite_median": 0.040792860090732574,
+      "sen2cor_median": 0.02573333333333334
+    },
+    "B8": {
+      "median_ratio_acolite_over_sen2cor": 1.7793101764316486,
+      "pearson_r": 0.7828304233944975,
+      "spearman_rho": 0.7857142857142859,
+      "acolite_median": 0.03769766166806221,
+      "sen2cor_median": 0.020999420529801312
+    },
+    "B11": {
+      "median_ratio_acolite_over_sen2cor": 0.1666053126516432,
+      "pearson_r": 0.4119544745572674,
+      "spearman_rho": 0.7142857142857144,
+      "acolite_median": 0.0024595109280198812,
+      "sen2cor_median": 0.0098
+    }
+  },
+  "per_station": [
+    {
+      "site": "CHITKUL TANK CHITKUL (V) PATANCHERU (M) SANGAREDDY DISTRICT",
+      "acolite_B2": 0.00335,
+      "acolite_B3": 0.01255,
+      "acolite_B4": 0.0015,
+      "acolite_B5": 0.01796,
+      "acolite_B6": 0.04162,
+      "acolite_B8": 0.03802,
+      "acolite_B11": 0.00776,
+      "sen2cor_B2": 0.0199,
+      "sen2cor_B3": 0.0271,
+      "sen2cor_B4": 0.0208,
+      "sen2cor_B5": 0.0319,
+      "sen2cor_B6": 0.0191,
+      "sen2cor_B8": 0.0137,
+      "sen2cor_B11": 0.0098
+    },
+    {
+      "site": "ISNAPUR TANK ISNAPUR (V) PATANCHERU 9M) SANGAREDDY DISTRICT",
+      "acolite_B2": 0.01535,
+      "acolite_B3": 0.0324,
+      "acolite_B4": 0.01314,
+      "acolite_B5": 0.03734,
+      "acolite_B6": 0.05287,
+      "acolite_B8": 0.04519,
+      "acolite_B11": 0.00726,
+      "sen2cor_B2": 0.02765,
+      "sen2cor_B3": 0.04533,
+      "sen2cor_B4": 0.02504,
+      "sen2cor_B5": 0.05402,
+      "sen2cor_B6": 0.03984,
+      "sen2cor_B8": 0.0278,
+      "sen2cor_B11": 0.00947
+    },
+    {
+      "site": "KAJIPALLY TANK KAJIPALLY MEDAK",
+      "acolite_B2": 0.01727,
+      "acolite_B3": 0.03295,
+      "acolite_B4": 0.01924,
+      "acolite_B5": 0.04156,
+      "acolite_B6": 0.04306,
+      "acolite_B8": 0.0377,
+      "acolite_B11": -0.00023,
+      "sen2cor_B2": 0.02559,
+      "sen2cor_B3": 0.04031,
+      "sen2cor_B4": 0.02614,
+      "sen2cor_B5": 0.05362,
+      "sen2cor_B6": 0.02948,
+      "sen2cor_B8": 0.02195,
+      "sen2cor_B11": 0.00938
+    },
+    {
+      "site": "KISTAREDDYPET TANK  MEDAK DIST.",
+      "acolite_B2": 0.01761,
+      "acolite_B3": 0.03511,
+      "acolite_B4": 0.01878,
+      "acolite_B5": 0.03755,
+      "acolite_B6": 0.04079,
+      "acolite_B8": 0.03507,
+      "acolite_B11": 0.0,
+      "sen2cor_B2": 0.02948,
+      "sen2cor_B3": 0.04657,
+      "sen2cor_B4": 0.02878,
+      "sen2cor_B5": 0.05103,
+      "sen2cor_B6": 0.0281,
+      "sen2cor_B8": 0.021,
+      "sen2cor_B11": 0.01315
+    },
+    {
+      "site": "LAKADARAM CHERUVU LAKADARAM (V) PATANCHERU (M) SANGAREDDY DISTRICT",
+      "acolite_B2": 0.01266,
+      "acolite_B3": 0.02206,
+      "acolite_B4": 0.01351,
+      "acolite_B5": 0.02603,
+      "acolite_B6": 0.03565,
+      "acolite_B8": 0.03121,
+      "acolite_B11": -0.00035,
+      "sen2cor_B2": 0.01715,
+      "sen2cor_B3": 0.024,
+      "sen2cor_B4": 0.0179,
+      "sen2cor_B5": 0.02825,
+      "sen2cor_B6": 0.01386,
+      "sen2cor_B8": 0.00736,
+      "sen2cor_B11": 0.00845
+    },
+    {
+      "site": "SAKI TANK PATANCHERU RANGA REDDY",
+      "acolite_B2": 0.01567,
+      "acolite_B3": 0.02901,
+      "acolite_B4": 0.0159,
+      "acolite_B5": 0.02454,
+      "acolite_B6": 0.03727,
+      "acolite_B8": 0.03213,
+      "acolite_B11": 0.00246,
+      "sen2cor_B2": 0.0257,
+      "sen2cor_B3": 0.03896,
+      "sen2cor_B4": 0.0275,
+      "sen2cor_B5": 0.03699,
+      "sen2cor_B6": 0.02272,
+      "sen2cor_B8": 0.01709,
+      "sen2cor_B11": 0.01476
+    },
+    {
+      "site": "SURISIGAL LAKE ICRISAT",
+      "acolite_B2": 0.01267,
+      "acolite_B3": 0.02866,
+      "acolite_B4": 0.01501,
+      "acolite_B5": 0.02521,
+      "acolite_B6": 0.0346,
+      "acolite_B8": 0.03911,
+      "acolite_B11": 0.00901,
+      "sen2cor_B2": 0.0291,
+      "sen2cor_B3": 0.045,
+      "sen2cor_B4": 0.03098,
+      "sen2cor_B5": 0.0383,
+      "sen2cor_B6": 0.02573,
+      "sen2cor_B8": 0.02198,
+      "sen2cor_B11": 0.02067
+    }
+  ]
+}
