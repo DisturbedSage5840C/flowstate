@@ -10,6 +10,15 @@ ACOLITE dry run (2026-09-20, ``reports/real/acolite_dry_run.json``): one real Se
 2020-11-04) was corrected end to end. Two practical limits found: a ~28 x 32 km subset died silently (memory), a
 ~10 x 20 km ``limit`` completes in about a minute, so process large sites in tiles; and ``ancillary_data=False`` is
 needed without NASA Earthdata credentials.
+
+C2RCC dry run (2026-09-20): the same scene was run through ``run_c2rcc`` end to end against a real ESA SNAP 14
+install (``gpt``) for the first time -- completed in well under a minute for the Hyderabad lakes bbox, producing a
+45-band GeoTIFF (Rrs per band, Kd, and c2rcc's IOP/uncertainty outputs) with physically plausible ranges. One
+non-obvious gotcha: a SAFE product extracted from a Windows-made zip (``Compress-Archive``) can come out with its
+``GRANULE``/``DATASTRIP`` directories missing the executable/traverse bit (mode ``644`` instead of ``755``), which
+SNAP's Sentinel-2 reader reports as a plain "No product reader found for file ..." with no mention of permissions --
+run ``chmod -R u+X`` (or ``find <SAFE> -type d -exec chmod 755 {} +``) on the extracted product if that error shows
+up despite the file clearly being a valid SAFE product.
 """
 import logging
 import os
@@ -74,8 +83,7 @@ def c2rcc_graph_xml() -> str:
     parameter, so resampling and subsetting are separate operators. Variables ${input},
     ${output} and ${region} are passed with -P on the gpt command line.
 
-    UNTESTED: SNAP is not installed in the development environment. Parameter names follow the
-    SNAP operator help (``gpt -h c2rcc.msi``); run that on your install and adjust if needed.
+    Verified working (2026-09-20) against a real ESA SNAP 14 install and a real Sentinel-2 L1C SAFE scene.
     """
     return """<graph id="c2rcc_msi">
   <version>1.0</version>
@@ -109,7 +117,7 @@ def c2rcc_graph_xml() -> str:
 
 def run_c2rcc(safe_path: Path | str, site: Site, out_dir: Path | str = INTERIM / "c2rcc",
               timeout: int = 3600) -> Path:
-    """SNAP c2rcc.msi neural-network inversion (tier 2: hypereutrophic / CDOM-rich). UNTESTED (no SNAP here)."""
+    """SNAP c2rcc.msi neural-network inversion (tier 2: hypereutrophic / CDOM-rich). Verified working 2026-09-20."""
     gpt = os.environ.get("SNAP_GPT", "gpt")
     out_dir = Path(out_dir) / site.name
     out_dir.mkdir(parents=True, exist_ok=True)
