@@ -40,6 +40,7 @@ seaborn>=0.13.0
 # API for the Flow State UI (frontend/)
 fastapi>=0.110.0
 uvicorn>=0.29.0
+httpx2>=2.0  # required by starlette.testclient (tests/test_api.py)
 
 # Testing
 pytest>=7.4.0
