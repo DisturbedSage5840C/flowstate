@@ -88,11 +88,15 @@ export type Compare = {
   distance_km: number
 }
 
+/* In dev, Vite proxies /api (see vite.config.ts) so this stays empty. In production the
+   frontend (Vercel) and API (Render) are different origins, so the build needs VITE_API_BASE. */
+const API_BASE = import.meta.env.VITE_API_BASE ?? ''
+
 async function get<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
   const qs = params
     ? '?' + new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])).toString()
     : ''
-  const r = await fetch(`/api${path}${qs}`)
+  const r = await fetch(`${API_BASE}/api${path}${qs}`)
   if (!r.ok) throw new Error(`${path}: ${r.status}`)
   return r.json()
 }
@@ -109,7 +113,7 @@ export const api = {
   alerts: () => get<Alert[]>('/alerts'),
   scene: (lat: number, lon: number) => get<Scene>('/scene', { lat, lon }),
   ask: async (query: string): Promise<AskResult> => {
-    const r = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query }) })
+    const r = await fetch(`${API_BASE}/api/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query }) })
     if (!r.ok) throw new Error(`ask: ${r.status}`)
     return r.json()
   },

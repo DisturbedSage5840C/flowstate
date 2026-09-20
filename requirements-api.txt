@@ -1,0 +1,8 @@
+# Minimal runtime deps for src/api/server.py — deployed separately from the
+# full data/ML pipeline (see requirements.txt) since the API only reads
+# pre-built parquet/json artifacts, it doesn't train anything.
+fastapi>=0.110.0
+uvicorn>=0.29.0
+pandas>=3.0.0
+numpy>=1.26.0
+pyarrow>=14.0.0

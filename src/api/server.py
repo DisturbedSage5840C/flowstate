@@ -6,10 +6,12 @@ Dev:  the Vite dev server (frontend/) proxies /api to this process.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -18,6 +20,16 @@ from src.api.service import ROOT, Store, clean
 
 app = FastAPI(title="Flow State API", version="1.0")
 DIST = ROOT / "frontend" / "dist"
+
+# The UI is deployed separately (Vercel) from this API (Render), so browser requests
+# cross origins. ALLOWED_ORIGINS is a comma-separated env var; defaults cover local dev.
+_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in _origins.split(",") if o.strip()],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @lru_cache(maxsize=1)
