@@ -37,7 +37,7 @@ class (A-E) are computed from measured or predicted parameters.
 - [Negative and rejected results (kept, not hidden)](#negative-and-rejected-results-kept-not-hidden)
 - [Metrics reference (every number, one table)](#metrics-reference-every-number-one-table)
 - [Atmospheric correction (ACOLITE / C2RCC)](#atmospheric-correction-acolite--c2rcc)
-- [Team](#team)
+- [Team](#team--uncle-chipps)
 - [Setup](#setup)
 - [Real-data pipeline](#real-data-pipeline)
 - [Flow State UI (React + FastAPI)](#flow-state-ui-react--fastapi)
@@ -566,11 +566,12 @@ part of any trained model:
 - **C2RCC**: requires ESA SNAP, which this project has never had installed. A Read → Resample → Subset →
   `c2rcc.msi` → Write `gpt` graph is written and documented but **untested**.
 
-## Team
-- **Aadi (P1)** — Geospatial / Data Engineer
-- **Marutey (P2)** — Data Scientist
-- **Navya (P3)** — ML Engineer A
-- **Jashan (P4)** — ML Engineer B / Full-Stack
+## Team — Uncle Chipps
+
+- Aadi
+- Marutey
+- Navya
+- Jashan
 
 ## Setup
 
