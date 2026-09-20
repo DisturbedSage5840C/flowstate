@@ -58,6 +58,7 @@ htmlcov/
 AQUA_SENSE_PROJECT_PLAN.md
 FIX_PLAN.md
 FLOW_STATE_FIGMA_PROMPT.md
+*.docx
 
 # frontend tooling
 frontend/.vite/
