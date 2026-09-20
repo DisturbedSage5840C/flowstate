@@ -17,5 +17,8 @@
     "is_river",
     "is_lake",
     "is_reservoir"
-  ]
+  ],
+  "eps_km": 0.1,
+  "sample_weight_col": null,
+  "include_distance_features": true
 }

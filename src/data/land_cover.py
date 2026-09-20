@@ -12,12 +12,16 @@ src.data.satellite_extract), one static classification per year (2020/2021 relea
 11 classes (10 Tree cover, 20 Shrubland, 30 Grassland, 40 Cropland, 50 Built-up, 60 Bare/sparse
 vegetation, 70 Snow/ice, 80 Permanent water bodies, 90 Herbaceous wetland, 95 Mangroves, 100 Moss/lichen).
 
-**NOT executed in this environment**: verified directly that this sandbox has no network route to
-planetarycomputer.microsoft.com (the same policy-blocked 403 that blocks the Sentinel-2 fetch here too).
-Code-complete and unit-tested against a mocked STAC search + a synthetic classification array
-(tests/test_land_cover.py); someone with real network access needs to run
-scripts.backfill_soil_land_cover to populate these columns and then ablate them before adding to any
-src.models.schema.FEATURE_SETS entry.
+**Network status (updated after live testing)**: planetarycomputer.microsoft.com IS reachable from this
+environment (confirmed via direct STAC search + signed-asset read, contrary to an earlier assumption
+that it was policy-blocked like the Sentinel-2 fetch). A live bulk backfill across ~2,121 stations was
+attempted and hit a transient 502 from Azure Front Door on its very first request; `fetch_land_cover_for_sites`
+did not previously catch per-station network/API exceptions, so that one failure aborted the whole run
+before its first 50-station checkpoint. Per-station try/except was added so a single station's failure
+is now skipped and logged rather than fatal. Still code-complete and unit-tested against a mocked STAC
+search + a synthetic classification array (tests/test_land_cover.py); run
+scripts.backfill_soil_land_cover (or a standalone land-cover-only variant) to populate these columns and
+then ablate them before adding to any src.models.schema.FEATURE_SETS entry.
 """
 
 from __future__ import annotations
@@ -101,11 +105,15 @@ def fetch_land_cover_for_sites(sites: pd.DataFrame, radius_m: float = 500.0, cat
 
     rows = []
     for i, row in enumerate(todo.itertuples(), start=1):
-        item = search_worldcover_item(row.lat, row.lon, catalog=catalog)
-        if item is None:
-            log.warning("no WorldCover coverage for %s (%.4f, %.4f)", row.site, row.lat, row.lon)
+        try:
+            item = search_worldcover_item(row.lat, row.lon, catalog=catalog)
+            if item is None:
+                log.warning("no WorldCover coverage for %s (%.4f, %.4f)", row.site, row.lat, row.lon)
+                continue
+            classification = read_classification_window(item, row.lat, row.lon, radius_m)
+        except Exception as exc:
+            log.warning("WorldCover fetch failed for %s (%.4f, %.4f): %s", row.site, row.lat, row.lon, exc)
             continue
-        classification = read_classification_window(item, row.lat, row.lon, radius_m)
         rows.append({"site": row.site, **landcover_fractions(classification)})
         if cache_path is not None and i % 50 == 0:
             pd.concat([cached, pd.DataFrame(rows)], ignore_index=True).drop_duplicates("site").to_parquet(cache_path)

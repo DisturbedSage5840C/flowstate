@@ -22,5 +22,8 @@
     "is_monsoon",
     "dist_nearest_city_km",
     "urban_load_index"
-  ]
+  ],
+  "eps_km": 0.1,
+  "sample_weight_col": null,
+  "include_distance_features": true
 }

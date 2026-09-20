@@ -2,6 +2,8 @@
   "feature_cols": {
     "turbidity": [
       "knn_baseline",
+      "nearest_station_km",
+      "knn_neighbor_std",
       "B2",
       "B3",
       "B4",

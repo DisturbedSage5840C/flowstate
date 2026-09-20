@@ -1,7 +1,7 @@
 model,target,validation,n,R2,spearman,R2_log
 knn_densification_oof,do,station_shuffled_densification,8151,0.38528045409561196,0.6476743637695704,
-knn_xgb_densification_oof,do,station_shuffled_densification,8151,0.40079063520918157,0.6444678365218413,
-knn_densification_oof,bod,station_shuffled_densification,6833,-0.03673788528019273,0.6515488835782897,0.23415683804929033
-knn_xgb_densification_oof,bod,station_shuffled_densification,6833,0.08393727613657731,0.6688458534331055,0.45958305456196924
-knn_densification_oof,turbidity,station_shuffled_densification,3223,0.02792109508310958,0.6128928221201966,0.31843760020358136
-knn_xgb_densification_oof,turbidity,station_shuffled_densification,3223,0.10907089530684899,0.6483046730427677,0.43833516545779394
+knn_xgb_densification_oof,do,station_shuffled_densification,8151,0.41685028453911943,0.6568365084034189,
+knn_densification_oof,bod,station_shuffled_densification,6833,-0.03667197394464905,0.6515656419134126,0.23434542413529869
+knn_xgb_densification_oof,bod,station_shuffled_densification,6833,0.08652068475724728,0.6873767150645812,0.47455352208124346
+knn_densification_oof,turbidity,station_shuffled_densification,3223,0.02792106650410131,0.6128954781588024,0.31842431591187603
+knn_xgb_densification_oof,turbidity,station_shuffled_densification,3223,0.10748377841242074,0.6652276900754548,0.4687384625746117

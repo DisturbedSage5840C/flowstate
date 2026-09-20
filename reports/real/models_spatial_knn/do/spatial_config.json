@@ -14,5 +14,8 @@
     "bdm3",
     "red_green",
     "nir"
-  ]
+  ],
+  "eps_km": 0.1,
+  "sample_weight_col": null,
+  "include_distance_features": true
 }

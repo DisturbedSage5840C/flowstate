@@ -220,3 +220,78 @@ def test_fit_adds_knn_feature_column_that_predict_does_not_require_the_caller_to
     assert KNN_FEATURE_COL not in new_points.columns
     out = reg.predict(new_points)      # must compute knn_baseline internally, not require it as input
     assert len(out) == 5 and out["bod"].notna().all()
+
+
+# ---------------------------------------------------------------------------
+# knn_predict: return_std arithmetic
+# ---------------------------------------------------------------------------
+
+def test_knn_predict_return_std_hand_worked_example():
+    # Same two-reference setup as test_knn_predict_known_weighted_average, k=2: verify std by hand.
+    ref_lat, ref_lon, ref_value = [0.0, 1.0], [0.0, 0.0], [10.0, 20.0]
+    pred, nearest, std = knn_predict(
+        query_lat=[0.0], query_lon=[0.0], ref_lat=ref_lat, ref_lon=ref_lon, ref_value=ref_value,
+        k=2, eps_km=0.1, return_std=True,
+    )
+    d1 = 0.0
+    d2 = knn_predict([0.0], [0.0], [1.0], [0.0], [20.0])[1][0]     # haversine distance for the 2nd ref
+    w1, w2 = 1.0 / (0.1 + d1), 1.0 / (0.1 + d2)
+    expected_pred = (w1 * 10.0 + w2 * 20.0) / (w1 + w2)
+    expected_var = (w1 * (10.0 - expected_pred) ** 2 + w2 * (20.0 - expected_pred) ** 2) / (w1 + w2)
+    assert pred[0] == pytest.approx(expected_pred)
+    assert std[0] == pytest.approx(np.sqrt(expected_var))
+
+
+def test_knn_predict_return_std_default_false_keeps_two_tuple():
+    result = knn_predict([0.0], [0.0], [0.0, 1.0], [0.0, 0.0], [10.0, 20.0], k=2)
+    assert len(result) == 2
+
+
+def test_knn_predict_return_std_k_eff_one_gives_zero_std():
+    # A single neighbour used (k=1) has zero spread by construction.
+    pred, nearest, std = knn_predict([0.0], [0.0], [0.0, 1.0], [0.0, 0.0], [10.0, 20.0], k=1, return_std=True)
+    assert std[0] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_knn_predict_return_std_empty_reference_returns_nan_triple():
+    pred, nearest, std = knn_predict([0.0], [0.0], [], [], [], k=5, return_std=True)
+    assert np.isnan(pred[0]) and np.isnan(nearest[0]) and np.isnan(std[0])
+
+
+# ---------------------------------------------------------------------------
+# New meta-features wired into the inner model
+# ---------------------------------------------------------------------------
+
+def test_fit_adds_distance_and_std_features_to_inner_model_by_default():
+    df = _clustered_df(n_sites=15, per_site=3, seed=9)
+    reg = SpatialKNNRegressor(target="bod", k=3, feature_cols=["f1"], inner_n_folds=2)
+    reg.fit(df, n_trials=1)
+    inner_feats = reg._inner.feature_cols["bod"]
+    assert "nearest_station_km" in inner_feats
+    assert "knn_neighbor_std" in inner_feats
+
+
+def test_include_distance_features_false_excludes_them_from_inner_model():
+    df = _clustered_df(n_sites=15, per_site=3, seed=10)
+    reg = SpatialKNNRegressor(target="bod", k=3, feature_cols=["f1"], inner_n_folds=2,
+                              include_distance_features=False)
+    reg.fit(df, n_trials=1)
+    inner_feats = reg._inner.feature_cols["bod"]
+    assert "nearest_station_km" not in inner_feats
+    assert "knn_neighbor_std" not in inner_feats
+
+
+# ---------------------------------------------------------------------------
+# eps_km / sample_weight_col / include_distance_features round-trip through save/load
+# ---------------------------------------------------------------------------
+
+def test_save_load_round_trips_eps_km_and_sample_weight_col(tmp_path):
+    df = _clustered_df(n_sites=20, per_site=3, seed=11)
+    reg = SpatialKNNRegressor(target="bod", k=4, feature_cols=["f1"], inner_n_folds=2,
+                              eps_km=0.5, sample_weight_col=None, include_distance_features=False)
+    reg.fit(df, n_trials=1)
+    reg.save(tmp_path)
+    loaded = SpatialKNNRegressor.load(tmp_path, "bod")
+    assert loaded.eps_km == pytest.approx(0.5)
+    assert loaded.sample_weight_col is None
+    assert loaded.include_distance_features is False

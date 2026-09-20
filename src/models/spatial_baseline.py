@@ -48,6 +48,8 @@ from src.models.spatial_cv import StationKFold
 from src.models.xgboost_pipeline import WaterQualityXGB
 
 KNN_FEATURE_COL = "knn_baseline"
+NEAREST_KM_FEATURE_COL = "nearest_station_km"
+NEIGHBOR_STD_FEATURE_COL = "knn_neighbor_std"
 DEFAULT_EPS_KM = 0.1
 
 
@@ -65,8 +67,8 @@ def station_level_lookup(df: pd.DataFrame, target: str, site_col: str = "site",
 
 
 def knn_predict(query_lat, query_lon, ref_lat, ref_lon, ref_value, k: int = 5,
-                eps_km: float = DEFAULT_EPS_KM, exclude_idx: Optional[np.ndarray] = None
-                ) -> tuple[np.ndarray, np.ndarray]:
+                eps_km: float = DEFAULT_EPS_KM, exclude_idx: Optional[np.ndarray] = None,
+                return_std: bool = False):
     """Inverse-distance-weighted average of the ``k`` nearest reference points' values, per query point.
 
     Returns ``(prediction, nearest_km)``; ``nearest_km`` is the distance to the single closest reference
@@ -77,6 +79,11 @@ def knn_predict(query_lat, query_lon, ref_lat, ref_lon, ref_value, k: int = 5,
     reference arrays to exclude before searching for neighbours (e.g. the query's own station, so a
     training row never sees its own already-known value as a "neighbour" at distance 0 -- the standard
     leave-one-out construction for a meta-feature). Pass -1 for "nothing to exclude" at that position.
+
+    ``return_std`` (optional): when True, also returns the inverse-distance-weighted standard deviation
+    of the ``k`` neighbour values actually used, as a third array -- a second, distance-independent
+    confidence signal (a locally heterogeneous neighbourhood is a reason to trust the prediction less,
+    even at a fixed distance). Default False keeps the original 2-tuple return unchanged.
     """
     query_lat = np.atleast_1d(np.asarray(query_lat, dtype=np.float64))
     query_lon = np.atleast_1d(np.asarray(query_lon, dtype=np.float64))
@@ -86,7 +93,7 @@ def knn_predict(query_lat, query_lon, ref_lat, ref_lon, ref_value, k: int = 5,
     n_ref = len(ref_lat)
     if n_ref == 0:
         nan = np.full(len(query_lat), np.nan)
-        return nan, nan
+        return (nan, nan, nan) if return_std else (nan, nan)
 
     dist = haversine_km(query_lat[:, None], query_lon[:, None], ref_lat[None, :], ref_lon[None, :])
     n_excluded_per_row = 0
@@ -106,7 +113,13 @@ def knn_predict(query_lat, query_lon, ref_lat, ref_lon, ref_value, k: int = 5,
         pred = (w * v_k).sum(axis=1) / w.sum(axis=1)
     nearest_km = np.where(np.isinf(nearest_km), np.nan, nearest_km)
     pred = np.where(np.isfinite(nearest_km), pred, np.nan)
-    return pred, nearest_km
+    if not return_std:
+        return pred, nearest_km
+    with np.errstate(invalid="ignore"):
+        var = (w * (v_k - pred[:, None]) ** 2).sum(axis=1) / w.sum(axis=1)
+        std = np.sqrt(var)
+    std = np.where(np.isfinite(nearest_km), std, np.nan)
+    return pred, nearest_km, std
 
 
 class SpatialKNNRegressor:
@@ -129,16 +142,31 @@ class SpatialKNNRegressor:
     inner_n_folds : int
         n_folds passed to the inner WaterQualityXGB (its own Optuna-tuning CV) -- kept small by default
         since this class's own predict_oof already does an outer CV loop (avoids very slow nested CV).
+    eps_km : float
+        Inverse-distance-weighting smoothing term passed through to every ``knn_predict`` call (was
+        previously hardcoded to ``DEFAULT_EPS_KM`` regardless of what a caller wanted).
+    sample_weight_col : str | None
+        Forwarded to the inner WaterQualityXGB's own ``sample_weight_col`` (e.g. "n_water_px").
+    include_distance_features : bool
+        When True (default), ``nearest_station_km`` and ``knn_neighbor_std`` are added as input features
+        to the inner XGBoost, not just attached to prediction output -- lets the tree learn to trust
+        ``knn_baseline`` less when the nearest station is far away or neighbours disagree (see module
+        docstring's distance-decile skill decay). Set False to fall back to the original behaviour.
     """
 
     def __init__(self, target: str, k: int = 5, feature_cols: Optional[list[str]] = None,
-                log_target: Optional[bool] = None, inner_n_folds: int = 3, random_state: int = 42):
+                log_target: Optional[bool] = None, inner_n_folds: int = 3, random_state: int = 42,
+                eps_km: float = DEFAULT_EPS_KM, sample_weight_col: Optional[str] = None,
+                include_distance_features: bool = True):
         self.target = target
         self.k = k
         self.feature_cols = list(feature_cols or [])
         self.log_target = log_target
         self.inner_n_folds = inner_n_folds
         self.random_state = random_state
+        self.eps_km = eps_km
+        self.sample_weight_col = sample_weight_col
+        self.include_distance_features = include_distance_features
         self._lookup: Optional[pd.DataFrame] = None
         self._inner: Optional[WaterQualityXGB] = None
 
@@ -147,20 +175,36 @@ class SpatialKNNRegressor:
     # ------------------------------------------------------------------
 
     def _make_inner(self) -> WaterQualityXGB:
+        extra = [NEAREST_KM_FEATURE_COL, NEIGHBOR_STD_FEATURE_COL] if self.include_distance_features else []
         kwargs = dict(targets=[self.target], n_folds=self.inner_n_folds, random_state=self.random_state,
-                     feature_cols={self.target: [KNN_FEATURE_COL, *self.feature_cols]})
+                     feature_cols={self.target: [KNN_FEATURE_COL, *extra, *self.feature_cols]},
+                     sample_weight_col=self.sample_weight_col)
         if self.log_target is not None:
             kwargs["log_targets"] = (self.target,) if self.log_target else ()
         return WaterQualityXGB(**kwargs)
 
-    def _loo_feature(self, df: pd.DataFrame, lookup: pd.DataFrame) -> np.ndarray:
-        """Leave-one-station-out KNN feature for every row of ``df`` against ``lookup``."""
+    def _loo_meta_features(self, df: pd.DataFrame, lookup: pd.DataFrame
+                           ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Leave-one-station-out KNN prediction, nearest-distance and neighbour-std for every row of
+        ``df`` against ``lookup``."""
         site_to_col = {s: i for i, s in enumerate(lookup["site"].to_numpy())}
         own_col = df["site"].map(site_to_col).fillna(-1).to_numpy().astype(int)
-        pred, _ = knn_predict(df["lat"].to_numpy(), df["lon"].to_numpy(), lookup["lat"].to_numpy(),
-                              lookup["lon"].to_numpy(), lookup[self.target].to_numpy(),
-                              k=self.k, exclude_idx=own_col)
+        return knn_predict(df["lat"].to_numpy(), df["lon"].to_numpy(), lookup["lat"].to_numpy(),
+                           lookup["lon"].to_numpy(), lookup[self.target].to_numpy(),
+                           k=self.k, eps_km=self.eps_km, exclude_idx=own_col, return_std=True)
+
+    def _loo_feature(self, df: pd.DataFrame, lookup: pd.DataFrame) -> np.ndarray:
+        """Leave-one-station-out KNN feature for every row of ``df`` against ``lookup``."""
+        pred, _, _ = self._loo_meta_features(df, lookup)
         return pred
+
+    def _attach_meta_features(self, frame: pd.DataFrame, pred: np.ndarray, nearest_km: np.ndarray,
+                              std: np.ndarray) -> None:
+        """Set knn_baseline (+ nearest_station_km/knn_neighbor_std if enabled) on ``frame`` in place."""
+        frame[KNN_FEATURE_COL] = pred
+        if self.include_distance_features:
+            frame[NEAREST_KM_FEATURE_COL] = nearest_km
+            frame[NEIGHBOR_STD_FEATURE_COL] = std
 
     # ------------------------------------------------------------------
     # Public API
@@ -171,7 +215,8 @@ class SpatialKNNRegressor:
         a leave-one-station-out KNN feature (so training never trivially sees "your own value")."""
         self._lookup = station_level_lookup(df, self.target)
         labelled = df[df[self.target].notna()].copy()
-        labelled[KNN_FEATURE_COL] = self._loo_feature(labelled, self._lookup)
+        pred, nearest_km, std = self._loo_meta_features(labelled, self._lookup)
+        self._attach_meta_features(labelled, pred, nearest_km, std)
         self._inner = self._make_inner()
         self._inner.train(labelled, n_trials=n_trials, verbose=verbose)
         return self
@@ -182,7 +227,7 @@ class SpatialKNNRegressor:
         if self._lookup is None:
             raise RuntimeError("No model fitted yet. Call .fit() first.")
         _, nearest_km = knn_predict([lat], [lon], self._lookup["lat"].to_numpy(), self._lookup["lon"].to_numpy(),
-                                    self._lookup[self.target].to_numpy(), k=1)
+                                    self._lookup[self.target].to_numpy(), k=1, eps_km=self.eps_km)
         return float(nearest_km[0])
 
     def predict(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -191,10 +236,11 @@ class SpatialKNNRegressor:
         if self._inner is None or self._lookup is None:
             raise RuntimeError("No model fitted yet. Call .fit() first.")
         feats = df.copy()
-        pred, nearest_km = knn_predict(feats["lat"].to_numpy(), feats["lon"].to_numpy(),
-                                       self._lookup["lat"].to_numpy(), self._lookup["lon"].to_numpy(),
-                                       self._lookup[self.target].to_numpy(), k=self.k)
-        feats[KNN_FEATURE_COL] = pred
+        pred, nearest_km, std = knn_predict(feats["lat"].to_numpy(), feats["lon"].to_numpy(),
+                                            self._lookup["lat"].to_numpy(), self._lookup["lon"].to_numpy(),
+                                            self._lookup[self.target].to_numpy(), k=self.k,
+                                            eps_km=self.eps_km, return_std=True)
+        self._attach_meta_features(feats, pred, nearest_km, std)
         out = self._inner.predict(feats)
         out["nearest_station_km"] = nearest_km
         return out
@@ -214,15 +260,17 @@ class SpatialKNNRegressor:
             lookup = station_level_lookup(train_df, self.target)
 
             train_feat = train_df.copy()
-            train_feat[KNN_FEATURE_COL] = self._loo_feature(train_feat, lookup)
+            pred, nearest_km_train, std = self._loo_meta_features(train_feat, lookup)
+            self._attach_meta_features(train_feat, pred, nearest_km_train, std)
             inner = self._make_inner()
             inner.train(train_feat, n_trials=n_trials, verbose=False)
 
             val_df = labelled.iloc[val_idx].copy()
-            pred_knn, nearest_km = knn_predict(val_df["lat"].to_numpy(), val_df["lon"].to_numpy(),
-                                               lookup["lat"].to_numpy(), lookup["lon"].to_numpy(),
-                                               lookup[self.target].to_numpy(), k=self.k)
-            val_df[KNN_FEATURE_COL] = pred_knn
+            pred_knn, nearest_km, std_val = knn_predict(val_df["lat"].to_numpy(), val_df["lon"].to_numpy(),
+                                                        lookup["lat"].to_numpy(), lookup["lon"].to_numpy(),
+                                                        lookup[self.target].to_numpy(), k=self.k,
+                                                        eps_km=self.eps_km, return_std=True)
+            self._attach_meta_features(val_df, pred_knn, nearest_km, std_val)
             preds = inner.predict(val_df)
             oof[val_idx] = preds[self.target].to_numpy()
             oof_nearest_km[val_idx] = nearest_km
@@ -240,7 +288,7 @@ class SpatialKNNRegressor:
             val_df = labelled.iloc[val_idx]
             pred, nearest_km = knn_predict(val_df["lat"].to_numpy(), val_df["lon"].to_numpy(),
                                            lookup["lat"].to_numpy(), lookup["lon"].to_numpy(),
-                                           lookup[self.target].to_numpy(), k=self.k)
+                                           lookup[self.target].to_numpy(), k=self.k, eps_km=self.eps_km)
             oof[val_idx] = pred
             oof_nearest_km[val_idx] = nearest_km
         return pd.DataFrame({self.target: oof, "nearest_station_km": oof_nearest_km}, index=labelled.index)
@@ -261,13 +309,18 @@ class SpatialKNNRegressor:
         self._lookup.to_parquet(target_dir / "lookup.parquet")
         self._inner.save(target_dir)
         with open(target_dir / "spatial_config.json", "w") as f:
-            json.dump({"target": self.target, "k": self.k, "feature_cols": self.feature_cols}, f, indent=2)
+            json.dump({"target": self.target, "k": self.k, "feature_cols": self.feature_cols,
+                      "eps_km": self.eps_km, "sample_weight_col": self.sample_weight_col,
+                      "include_distance_features": self.include_distance_features}, f, indent=2)
 
     @classmethod
     def load(cls, model_dir: str | Path, target: str) -> "SpatialKNNRegressor":
         target_dir = Path(model_dir) / target
         cfg = json.loads((target_dir / "spatial_config.json").read_text())
-        instance = cls(target=cfg["target"], k=cfg["k"], feature_cols=cfg["feature_cols"])
+        instance = cls(target=cfg["target"], k=cfg["k"], feature_cols=cfg["feature_cols"],
+                       eps_km=cfg.get("eps_km", DEFAULT_EPS_KM),
+                       sample_weight_col=cfg.get("sample_weight_col"),
+                       include_distance_features=cfg.get("include_distance_features", True))
         instance._lookup = pd.read_parquet(target_dir / "lookup.parquet")
         instance._inner = WaterQualityXGB.load(target_dir, targets=[target])
         return instance

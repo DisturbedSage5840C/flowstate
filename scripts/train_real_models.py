@@ -23,7 +23,7 @@ from src.data import nwdp
 from src.data.training_table import FEATURE_COLS_REAL, TARGETS
 from src.models.baselines import mean_baseline_oof, median_baseline_oof
 from src.models.metrics import MetricsReporter
-from src.models.schema import FEATURE_SETS
+from src.models.schema import FEATURE_SETS, LAND_COVER_COLS
 from src.models.spatial_cv import SpatialKFold
 from src.models.xgboost_pipeline import WaterQualityXGB
 
@@ -117,6 +117,34 @@ def n_water_px_weighting_ablation(df: pd.DataFrame, folds: int, seed: int, n_tri
     return out
 
 
+def land_cover_ablation(df: pd.DataFrame, folds: int, seed: int, n_trials: int) -> dict:
+    """Does adding ESA WorldCover cropland/built/tree fractions (src.data.land_cover, now cached for
+    100% of stations) improve each target's row-level regressor, on top of its current best FEATURE_SETS
+    entry? With vs without, identical rows (dropna requires the land-cover columns too, so both arms see
+    the same n), same SpatialKFold folds -- adopt into FEATURE_SETS only if this shows a real gain,
+    exactly the standard rainfall was held to and failed (see schema.py)."""
+    if not all(c in df.columns for c in LAND_COVER_COLS):
+        return {"skill": "land cover columns not present"}
+    reporter = MetricsReporter(targets=TARGETS)
+    out = {}
+    for with_lc in (False, True):
+        feats = {t: FEATURE_SETS[t] + LAND_COVER_COLS if with_lc else FEATURE_SETS[t] for t in TARGETS}
+        needed = sorted({c for cols in feats.values() for c in cols})
+        sub = df.dropna(subset=needed).reset_index(drop=True)
+        pipe = WaterQualityXGB(n_folds=folds, random_state=seed, feature_cols=feats, targets=TARGETS)
+        pipe.train(sub, n_trials=n_trials, verbose=False)
+        oof = pipe.predict_oof(sub)
+        table = reporter.report(sub, oof)
+        overall = table[table.water_body_type == "overall"].set_index("target")
+        out["with_land_cover" if with_lc else "without_land_cover"] = {
+            "n": int(len(sub)),
+            **{t: {"R2": float(overall.loc[t, "R2"]), "R2_log": float(overall.loc[t, "R2_log"]),
+                  "spearman": float(overall.loc[t, "spearman"])}
+               for t in TARGETS if t in overall.index}
+        }
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--trials", type=int, default=30)
@@ -160,6 +188,8 @@ def main():
     print(f"turbidity anomaly (within-station): {turb_anomaly}")
     weight_ablation = n_water_px_weighting_ablation(df, args.folds, args.seed, min(args.trials, 15))
     print(f"n_water_px sample-weight ablation: {weight_ablation}")
+    lc_ablation = land_cover_ablation(df, args.folds, args.seed, min(args.trials, 15))
+    print(f"land cover ablation: {lc_ablation}")
 
     summary = {
         "data": f"real CPCB in-situ + Sentinel-2 L2A ({TABLE.name})",
@@ -172,10 +202,13 @@ def main():
         "station_level_bod_ranking": station_bod,
         "turbidity_anomaly": turb_anomaly,
         "n_water_px_weighting_ablation": weight_ablation,
+        "land_cover_ablation": lc_ablation,
         "skill_notes": {"do": "none — DO is not optically active; kept for the low-DO screening flag "
                               "(scripts/train_screening.py), not for its own accuracy"},
     }
     (OUT / "metrics_summary.json").write_text(json.dumps(summary, indent=2, default=str))
+    (OUT / "land_cover_ablation.json").write_text(
+        json.dumps({"row_level": lc_ablation}, indent=2, default=str))
 
     if not args.no_shap:
         from src.models import SHAPExplainer
