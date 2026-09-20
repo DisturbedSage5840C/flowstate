@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from src.api.service import ROOT, Store
+from src.api.service import ROOT, Store, clean
 
 app = FastAPI(title="Flow State API", version="1.0")
 DIST = ROOT / "frontend" / "dist"
@@ -31,18 +31,18 @@ class AskBody(BaseModel):
 
 @app.get("/api/overview")
 def overview(state: str | None = None):
-    return store().overview(state)
+    return clean(store().overview(state))
 
 
 @app.get("/api/stations")
 def stations(year: int | None = None, state: str | None = None):
-    return store().list_stations(year=year, state=state)
+    return clean(store().list_stations(year=year, state=state))
 
 
 @app.get("/api/stations/{sid}")
 def station(sid: str):
     try:
-        return store().station(sid)
+        return clean(store().station(sid))
     except KeyError:
         raise HTTPException(404, f"unknown station {sid}")
 
@@ -50,44 +50,44 @@ def station(sid: str):
 @app.get("/api/compare")
 def compare(a: str, b: str):
     try:
-        return store().compare(a, b)
+        return clean(store().compare(a, b))
     except KeyError as e:
         raise HTTPException(404, f"unknown station {e.args[0]}")
 
 
 @app.get("/api/search")
 def search(q: str = Query(..., min_length=1)):
-    return store().search(q)
+    return clean(store().search(q))
 
 
 @app.get("/api/cities")
 def cities():
-    return store().cities()
+    return clean(store().cities())
 
 
 @app.get("/api/priorities")
 def priorities(n: int = 8, state: str | None = None):
-    return store().priorities(n=n, state=state)
+    return clean(store().priorities(n=n, state=state))
 
 
 @app.get("/api/recommendations")
 def recommendations():
-    return store().area_recommendations()
+    return clean(store().area_recommendations())
 
 
 @app.get("/api/alerts")
 def alerts(n: int = 8):
-    return store().alerts(n=n)
+    return clean(store().alerts(n=n))
 
 
 @app.get("/api/scene")
 def scene(lat: float, lon: float):
-    return store().scene_near(lat, lon)
+    return clean(store().scene_near(lat, lon))
 
 
 @app.post("/api/ask")
 def ask(body: AskBody):
-    return store().ask(body.query)
+    return clean(store().ask(body.query))
 
 
 if DIST.exists():

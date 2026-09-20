@@ -53,6 +53,26 @@ def _nan_to_none(v):
     return v
 
 
+def clean(obj):
+    """Make any nested result JSON-safe: NaN/inf -> None, numpy scalars -> Python, Timestamps -> strings.
+
+    pandas 3 turns a missing value in a text column into NaN (older pandas kept None), and NaN is not valid JSON,
+    so every API response goes through this instead of trusting each field to be sanitised individually."""
+    if isinstance(obj, dict):
+        return {k: clean(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [clean(v) for v in obj]
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (float, np.floating)):
+        return None if not np.isfinite(obj) else float(obj)
+    if isinstance(obj, pd.Timestamp):
+        return obj.isoformat()
+    return obj
+
+
 def _band_bod(v):
     return None if v is None or pd.isna(v) else "high" if v > BOD_HIGH else "mod" if v > BOD_LIMIT else "low"
 
