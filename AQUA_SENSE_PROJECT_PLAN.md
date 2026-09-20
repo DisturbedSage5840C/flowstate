@@ -399,4 +399,3 @@ CPCB class; Streamlit dashboard; the Flow State UI + API above.
 - Concentration regression for DO, BOD and turbidity is near zero far from any monitored station.
 - Soil composition (ISRIC) was not run; land cover was run and rejected.
 - The UI's infrastructure/planning layers have no data source.
-- The CI workflow was written but has not yet run on GitHub.
